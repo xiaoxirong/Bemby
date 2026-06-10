@@ -1,4 +1,5 @@
-import { TelegramClient, Api } from 'telegram';
+import { TelegramClient, Api, Logger } from 'telegram';
+import { LogLevel } from 'telegram/extensions/Logger';
 import { StringSession } from 'telegram/sessions';
 import { NewMessage, NewMessageEvent } from 'telegram/events';
 
@@ -32,6 +33,7 @@ export async function runCheckin(
   const client = new TelegramClient(new StringSession(sessionString), apiId, apiHash, {
     connectionRetries: 5,
     autoReconnect: false,
+    baseLogger: new Logger(LogLevel.NONE),
   });
 
   await client.connect();
