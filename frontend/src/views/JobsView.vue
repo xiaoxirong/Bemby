@@ -167,22 +167,29 @@
 
         <!-- checkin-specific fields -->
         <template v-if="form.jobType === 'checkin'">
-          <div class="form-row" style="align-items:end">
+          <div class="form-row" style="align-items:start">
             <div class="form-group">
-              <label class="form-label">
-                {{ t('jobs.labelStartCommand') }}
-                <span style="color:#aaa;font-weight:400"> — {{ t('common.blankForDefault') }}</span>
-                <div style="font-size:11px;color:#aaa;font-weight:400;margin-top:2px">{{ t('jobs.startCommandHint') }}</div>
-              </label>
-              <input v-model.trim="form.startCommand" class="form-input" placeholder="/start" />
+              <label class="form-label">{{ t('jobs.labelStartCommand') }}</label>
+              <select v-model="cmdDropdown" class="form-select">
+                <option value="">({{ t('common.default') }}: /start)</option>
+                <option value="/start">/start</option>
+                <option value="/checkin">/checkin</option>
+                <option value="custom">{{ t('common.custom') }}...</option>
+              </select>
+              <input v-if="cmdDropdown === 'custom'" v-model.trim="cmdCustom" class="form-input" style="margin-top:6px" placeholder="/mycommand" />
+              <div style="font-size:11px;color:#aaa;margin-top:4px">{{ t('jobs.startCommandHint') }}</div>
             </div>
             <div class="form-group">
-              <label class="form-label">
-                {{ t('jobs.labelCheckinButton') }}
-                <span style="color:#aaa;font-weight:400"> — {{ t('common.blankForDefault') }}</span>
-                <div style="font-size:11px;color:#aaa;font-weight:400;margin-top:2px">{{ t('jobs.checkinButtonHint') }}</div>
-              </label>
-              <input v-model.trim="form.checkinButton" class="form-input" placeholder="签到" />
+              <label class="form-label">{{ t('jobs.labelCheckinButton') }}</label>
+              <select v-model="btnDropdown" class="form-select">
+                <option value="">({{ t('common.default') }}: 签到)</option>
+                <option value="签到">签到</option>
+                <option value="{aiBtn}" :disabled="aiKeyMissing">{{ t('jobs.aiBtnOption') }}{{ aiKeyMissing ? ' (' + t('jobs.noApiKey') + ')' : '' }}</option>
+                <option value="{anyBtn}">{{ t('jobs.anyBtnOption') }}</option>
+                <option value="custom">{{ t('common.custom') }}...</option>
+              </select>
+              <input v-if="btnDropdown === 'custom'" v-model.trim="btnCustom" class="form-input" style="margin-top:6px" placeholder="Custom button text" />
+              <div v-if="btnDropdown === '{aiBtn}' && aiKeyMissing" style="font-size:11px;color:#e63946;margin-top:4px">{{ t('jobs.aiKeyWarning') }}</div>
             </div>
           </div>
           <div class="form-row">
@@ -216,7 +223,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import { jobsApi, accountsApi, statusApi, settingsApi, logsApi, type Job, type Account, type ScheduleStatus, type Settings, type EmbywatchConfig } from '../api/client';
 import { t } from '../i18n';
 
@@ -240,8 +247,6 @@ const form = reactive({
   replyTimeoutMs: 40000,
   retryMax: 5,
   enabled: true,
-  startCommand: '',
-  checkinButton: '',
 });
 const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; userAgent: string }>({
   username: '',
@@ -256,12 +261,30 @@ const embyServer = reactive<{ protocol: 'https' | 'http'; host: string; port: nu
 });
 const formError = ref('');
 const saving = ref(false);
+const aiKeyMissing = computed(() => !settings.value?.ai_api_key);
+
+const CMD_PRESETS = new Set(['', '/start', '/checkin'])
+const BTN_PRESETS = new Set(['', '签到', '{aiBtn}', '{anyBtn}'])
+const cmdDropdown = ref('')
+const cmdCustom = ref('')
+const btnDropdown = ref('')
+const btnCustom = ref('')
+
+function setCmdState(val: string) {
+  if (CMD_PRESETS.has(val)) { cmdDropdown.value = val; cmdCustom.value = ''; }
+  else { cmdDropdown.value = 'custom'; cmdCustom.value = val; }
+}
+function setBtnState(val: string) {
+  if (BTN_PRESETS.has(val)) { btnDropdown.value = val; btnCustom.value = ''; }
+  else { btnDropdown.value = 'custom'; btnCustom.value = val; }
+}
 
 function onJobTypeChange() {
   Object.assign(embyCfg, { username: '', password: '', playDuration: '', userAgent: '' });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
   form.botUsername = '';
   form.accountId = form.jobType === 'checkin' ? (accounts.value[0]?.id ?? null) : null;
+  setCmdState(''); setBtnState('');
 }
 
 onMounted(async () => {
@@ -303,11 +326,10 @@ function openAdd() {
     replyTimeoutMs: 40000,
     retryMax: Number(settings.value?.default_max_retry ?? 5),
     enabled: true,
-    startCommand: '',
-    checkinButton: '',
   });
   Object.assign(embyCfg, { username: '', password: '', playDuration: '', userAgent: '' });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
+  setCmdState(''); setBtnState('');
   formError.value = '';
   showForm.value = true;
 }
@@ -319,9 +341,9 @@ function openEdit(j: Job) {
     botUsername: j.botUsername, scheduleWindowStart: j.scheduleWindowStart,
     scheduleWindowEnd: j.scheduleWindowEnd, timezone: j.timezone,
     replyTimeoutMs: j.replyTimeoutMs, retryMax: j.retryMax, enabled: j.enabled,
-    startCommand: j.startCommand === '/start' ? '' : (j.startCommand ?? ''),
-    checkinButton: j.checkinButton === '签到' ? '' : (j.checkinButton ?? ''),
   });
+  setCmdState(j.startCommand === '/start' ? '' : (j.startCommand ?? ''));
+  setBtnState(j.checkinButton === '签到' ? '' : (j.checkinButton ?? ''));
   if (j.jobType === 'embywatch') {
     // Parse stored URL back into protocol / host / port fields
     const m = j.botUsername.match(/^(https?):\/\/([^:/]+)(?::(\d+))?/);
@@ -395,11 +417,13 @@ async function saveJob() {
   saving.value = true;
   try {
     const rawCfg = buildConfig();
+    const startCommand = (cmdDropdown.value === 'custom' ? cmdCustom.value : cmdDropdown.value) || undefined;
+    const checkinButton = (btnDropdown.value === 'custom' ? btnCustom.value : btnDropdown.value) || undefined;
     const payload = {
       ...form,
       config: rawCfg ?? null,
-      startCommand: form.startCommand || undefined,
-      checkinButton: form.checkinButton || undefined,
+      startCommand,
+      checkinButton,
     };
     if (editTarget.value) {
       await jobsApi.update(editTarget.value.id, payload);

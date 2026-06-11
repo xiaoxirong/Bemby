@@ -15,6 +15,7 @@ const zh = {
     blankForDefault: '留空使用系统默认',
     leaveBlankKeep: '留空保持不变',
     saveFailed: '保存失败',
+    default: '默认', custom: '自定义',
   },
   login: {
     subtitle: '登录管理面板',
@@ -67,6 +68,8 @@ const zh = {
     startCommandHint: '支持占位符：{word:N} {WORD:N} {num:N} {alpha:N} {uuid}',
     labelCheckinButton: '签到按钮文字',
     checkinButtonHint: '特殊选项：{anyBtn} 随机点击，{aiBtn} AI 智能选择（需配置 QWEN_API_KEY）',
+    aiBtnOption: '{aiBtn} — AI 识别', anyBtnOption: '{anyBtn} — 随机',
+    noApiKey: '未配置密钥', aiKeyWarning: '未配置 AI API 密钥，请前往设置页面配置。',
     labelReplyTimeout: '回复超时（毫秒）',
     labelWindowStart: '开始时间（HHMM）',
     labelWindowEnd: '结束时间（HHMM）',
@@ -145,6 +148,7 @@ const en: typeof zh = {
     blankForDefault: '— blank uses system default',
     leaveBlankKeep: '— leave blank to keep current',
     saveFailed: 'Save failed',
+    default: 'Default', custom: 'Custom',
   },
   login: {
     subtitle: 'Sign in to access the admin panel',
@@ -197,6 +201,8 @@ const en: typeof zh = {
     startCommandHint: 'Placeholders: {word:N} {WORD:N} {num:N} {alpha:N} {uuid}',
     labelCheckinButton: 'Check-in Button Text',
     checkinButtonHint: 'Special: {anyBtn} picks random, {aiBtn} uses AI (requires QWEN_API_KEY)',
+    aiBtnOption: '{aiBtn} — AI picks', anyBtnOption: '{anyBtn} — random',
+    noApiKey: 'no API key', aiKeyWarning: 'AI API key not configured — set it in Settings.',
     labelReplyTimeout: 'Reply Timeout (ms)',
     labelWindowStart: 'Window Start (HHMM)',
     labelWindowEnd: 'Window End (HHMM)',
