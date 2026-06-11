@@ -42,7 +42,11 @@
               <td>{{ j.jobType === 'embywatch' ? j.botUsername : '@' + j.botUsername }}</td>
               <td>{{ fmtWindow(j.scheduleWindowStart, j.scheduleWindowEnd) }}</td>
               <td>
-                <span :class="j.enabled ? 'badge badge-green' : 'badge badge-grey'">
+                <span
+                  :class="j.enabled ? 'badge badge-green' : 'badge badge-grey'"
+                  style="cursor:pointer;user-select:none"
+                  @click="toggleEnabled(j)"
+                >
                   {{ j.enabled ? t('common.yes') : t('common.no') }}
                 </span>
               </td>
@@ -85,7 +89,7 @@
             <label class="form-label">{{ t('jobs.labelType') }}</label>
             <select v-model="form.jobType" class="form-select" @change="onJobTypeChange">
               <option value="checkin">Check-in (签到)</option>
-              <option value="embywatch">Emby Watch (看片)</option>
+              <option value="embywatch">Emby Watch (观看)</option>
             </select>
           </div>
         </div>
@@ -168,6 +172,7 @@
               <label class="form-label">
                 {{ t('jobs.labelStartCommand') }}
                 <span style="color:#aaa;font-weight:400"> — {{ t('common.blankForDefault') }}</span>
+                <div style="font-size:11px;color:#aaa;font-weight:400;margin-top:2px">{{ t('jobs.startCommandHint') }}</div>
               </label>
               <input v-model.trim="form.startCommand" class="form-input" placeholder="/start" />
             </div>
@@ -407,6 +412,12 @@ async function saveJob() {
   } finally {
     saving.value = false;
   }
+}
+
+async function toggleEnabled(j: Job) {
+  if (j.enabled && !confirm(t('jobs.confirmDisable'))) return;
+  await jobsApi.update(j.id, { enabled: !j.enabled });
+  await Promise.all([loadJobs(), loadStatus()]);
 }
 
 async function remove(id: number) {

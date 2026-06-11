@@ -83,17 +83,30 @@
 
             <div class="card-section-title" style="margin-top:16px;font-size:11px">签到（Check-in）</div>
             <p class="help-para">
-              向 Telegram 机器人发送消息以完成每日签到。
+              向 Telegram 机器人发送命令并点击回复键盘上的按钮，完成每日签到。
               <strong>机器人用户名</strong>字段接受带或不带 <code>@</code> 前缀的机器人账号。
             </p>
+            <table class="help-table">
+              <tr><td>启动命令</td><td>发送给机器人的命令，默认 <code>/start</code>。支持模板占位符，留空则使用默认值。</td></tr>
+              <tr><td>签到按钮文字</td><td>用于在机器人回复的内联键盘中匹配按钮的文字，默认 <code>签到</code>。</td></tr>
+            </table>
+            <p class="help-para"><strong>命令模板占位符</strong>——可在启动命令中嵌入动态内容，每次执行时随机生成：</p>
+            <table class="help-table">
+              <tr><td><code>{word}</code> / <code>{word:N}</code></td><td>N 位随机小写字母（默认 6 位）</td></tr>
+              <tr><td><code>{WORD}</code> / <code>{WORD:N}</code></td><td>N 位随机大写字母（默认 6 位）</td></tr>
+              <tr><td><code>{num}</code> / <code>{num:N}</code></td><td>N 位随机数字（默认 6 位）</td></tr>
+              <tr><td><code>{alpha}</code> / <code>{alpha:N}</code></td><td>N 位随机大小写字母与数字混合（默认 8 位）</td></tr>
+              <tr><td><code>{uuid}</code></td><td>随机 UUID v4</td></tr>
+            </table>
+            <p class="help-note">示例：<code>/create {word:4}-{num:6}</code> 发送时会变成 <code>/create abcd-829341</code></p>
 
-            <div class="card-section-title" style="margin-top:16px;font-size:11px">看片（Emby Watch）</div>
+            <div class="card-section-title" style="margin-top:16px;font-size:11px">观看（Emby Watch）</div>
             <p class="help-para">
               在 Emby 服务器上模拟视频播放会话：随机选择一部影片或剧集，每 30 秒上报进度，
               然后将会话标记为已停止。可用于保持 Emby 账户活跃。
             </p>
             <table class="help-table">
-              <tr><td>服务器地址</td><td>Emby 服务器完整地址，如 <code>https://emby.example.com:443</code></td></tr>
+              <tr><td>服务器地址</td><td>Emby 服务器完整地址，如 <code>https://emby.example.com:443</code>。粘贴含协议和端口的完整 URL 时会自动解析并填充各字段。</td></tr>
               <tr><td>Emby 用户名 / 密码</td><td>用于登录 Emby 账户的凭据。</td></tr>
               <tr><td>播放时长</td><td>模拟播放的秒数。留空使用系统默认值。</td></tr>
               <tr><td>用户代理</td><td>发送给 Emby 的 UA 字符串。留空使用系统默认值。</td></tr>
@@ -107,6 +120,12 @@
             <p class="help-note">
               在设置中关闭<em>每天仅运行一次</em>，可让调度器对今天已运行过的任务重新触发，便于测试。
             </p>
+
+            <div class="card-section-title" style="margin-top:16px;font-size:11px">启用 / 禁用</div>
+            <p class="help-para">
+              点击任务列表中<strong>启用</strong>列的状态标签，可直接切换任务的启用状态，无需打开编辑表单。
+              禁用任务时会弹出确认框；重新启用时无需确认。
+            </p>
           </template>
           <template v-else>
             <div class="card-section-title">Jobs</div>
@@ -114,17 +133,30 @@
 
             <div class="card-section-title" style="margin-top:16px;font-size:11px">Check-in (签到)</div>
             <p class="help-para">
-              Sends a message to a Telegram bot to perform a daily check-in.
+              Sends a command to a Telegram bot and clicks the reply keyboard button to perform a daily check-in.
               The <strong>Bot Username</strong> field accepts the bot handle with or without the leading <code>@</code>.
             </p>
+            <table class="help-table">
+              <tr><td>Start Command</td><td>Command sent to the bot, default <code>/start</code>. Supports template placeholders. Leave blank to use the default.</td></tr>
+              <tr><td>Check-in Button</td><td>Text used to match the inline keyboard button, default <code>签到</code>.</td></tr>
+            </table>
+            <p class="help-para"><strong>Command template placeholders</strong> — embed dynamic content that is randomly generated each run:</p>
+            <table class="help-table">
+              <tr><td><code>{word}</code> / <code>{word:N}</code></td><td>N random lowercase letters (default 6)</td></tr>
+              <tr><td><code>{WORD}</code> / <code>{WORD:N}</code></td><td>N random uppercase letters (default 6)</td></tr>
+              <tr><td><code>{num}</code> / <code>{num:N}</code></td><td>N random digits (default 6)</td></tr>
+              <tr><td><code>{alpha}</code> / <code>{alpha:N}</code></td><td>N random mixed-case alphanumeric characters (default 8)</td></tr>
+              <tr><td><code>{uuid}</code></td><td>Random UUID v4</td></tr>
+            </table>
+            <p class="help-note">Example: <code>/create {word:4}-{num:6}</code> sends as <code>/create abcd-829341</code></p>
 
-            <div class="card-section-title" style="margin-top:16px;font-size:11px">Emby Watch (看片)</div>
+            <div class="card-section-title" style="margin-top:16px;font-size:11px">Emby Watch (观看)</div>
             <p class="help-para">
               Simulates a video playback session on an Emby server. Picks a random movie or episode, reports
               progress every 30 seconds, then marks the session as stopped. Useful for keeping Emby accounts active.
             </p>
             <table class="help-table">
-              <tr><td>Server URL</td><td>Full address of the Emby server, e.g. <code>https://emby.example.com:443</code></td></tr>
+              <tr><td>Server URL</td><td>Full address of the Emby server, e.g. <code>https://emby.example.com:443</code>. Paste a URL with protocol and port and the fields are auto-filled.</td></tr>
               <tr><td>Emby Username / Password</td><td>Credentials for the Emby account to log in as.</td></tr>
               <tr><td>Play Duration</td><td>Seconds to simulate playback. Blank uses the system default.</td></tr>
               <tr><td>User Agent</td><td>Browser UA string sent to Emby. Blank uses the system default.</td></tr>
@@ -141,6 +173,12 @@
               Disable <em>Enforce one run per day</em> in Settings to allow the scheduler to re-trigger jobs that have
               already run today -- useful for testing.
             </p>
+
+            <div class="card-section-title" style="margin-top:16px;font-size:11px">Enable / Disable</div>
+            <p class="help-para">
+              Click the status badge in the <strong>Enabled</strong> column to toggle a job on or off without opening the edit form.
+              Disabling a job requires confirmation; re-enabling is immediate.
+            </p>
           </template>
         </div>
       </div>
@@ -154,9 +192,9 @@
               <tr><td>默认时区</td><td>用于计算所有任务的时间窗口。</td></tr>
               <tr><td>默认最大重试次数</td><td>任务失败后的重试次数。</td></tr>
               <tr><td>每天仅运行一次</td><td>防止任务在 24 小时内重复运行。测试时可关闭。</td></tr>
-              <tr><td>默认播放时长</td><td>未在任务中单独设置时，Emby 看片会话的默认时长（秒）。</td></tr>
+              <tr><td>默认播放时长</td><td>未在任务中单独设置时，Emby 观看会话的默认时长（秒）。</td></tr>
               <tr><td>设备名称</td><td>发送给 Emby API 的设备标识（如 <code>Mac</code>），Emby 会在客户端旁显示该名称。</td></tr>
-              <tr><td>默认用户代理</td><td>未在任务中单独设置时，Emby 看片请求使用的默认 UA 字符串。</td></tr>
+              <tr><td>默认用户代理</td><td>未在任务中单独设置时，Emby 观看请求使用的默认 UA 字符串。</td></tr>
             </table>
             <p class="help-para" style="margin-top:14px">
               <strong>管理员凭据</strong> -- 随时更改管理员用户名或密码，确认更改时需输入当前密码。
@@ -192,10 +230,23 @@
             <div class="help-badges-row">
               <span class="badge badge-green">成功</span>
               <span class="badge badge-red">失败</span>
-              <span class="badge badge-blue">运行中</span>
-              <span class="badge badge-grey">手动</span>
+              <span class="badge badge-orange">运行中</span>
             </div>
-            <p class="help-note">通过运行按钮触发（而非调度器）的任务会显示<em>手动</em>来源标记。</p>
+            <p class="help-para" style="margin-top:10px"><strong>签到任务详情</strong></p>
+            <p class="help-para">
+              点击任意签到日志行可展开仿 Telegram 气泡样式的对话详情，显示完整的交互过程：
+            </p>
+            <ol class="help-steps">
+              <li>右侧绿色气泡显示发送的命令（含模板展开后的实际内容）。</li>
+              <li>左侧灰色气泡显示机器人回复（图片、文字、网页预览）及内联键盘，已点击的按钮以绿色高亮。</li>
+              <li>右侧绿色气泡显示实际点击的按钮文字。</li>
+              <li>若机器人在按钮点击后更新了消息，左侧会再显示一个更新后的气泡。</li>
+              <li>若有多次重试，每次尝试均单独展示。</li>
+            </ol>
+            <p class="help-note">
+              对于状态为<strong>运行中</strong>的任务，详情面板每 2 秒自动刷新。
+              可点击消息列的<strong>停止</strong>按钮随时中止正在运行的签到任务。
+            </p>
           </template>
           <template v-else>
             <div class="card-section-title">Logs</div>
@@ -206,10 +257,23 @@
             <div class="help-badges-row">
               <span class="badge badge-green">Success</span>
               <span class="badge badge-red">Failed</span>
-              <span class="badge badge-blue">Running</span>
-              <span class="badge badge-grey">Manual</span>
+              <span class="badge badge-orange">Running</span>
             </div>
-            <p class="help-note">The <em>Manual</em> source badge appears on runs triggered via the Run button rather than the scheduler.</p>
+            <p class="help-para" style="margin-top:10px"><strong>Check-in detail view</strong></p>
+            <p class="help-para">
+              Click any check-in log row to expand a Telegram-style chat view showing the full interaction:
+            </p>
+            <ol class="help-steps">
+              <li>A green bubble on the right shows the command that was sent (with any template placeholders already expanded).</li>
+              <li>A grey bubble on the left shows the bot's reply — photo, text, web preview — with the inline keyboard below it. The clicked button is highlighted green.</li>
+              <li>A green bubble on the right shows which button was clicked.</li>
+              <li>If the bot edited its message after the button click, the updated content appears as a second grey bubble on the left.</li>
+              <li>If the job retried, each attempt is shown separately.</li>
+            </ol>
+            <p class="help-note">
+              While a job is <strong>Running</strong>, the detail panel refreshes automatically every 2 seconds.
+              Click the <strong>Stop</strong> button in the message column to cancel a running check-in at any time.
+            </p>
           </template>
         </div>
       </div>

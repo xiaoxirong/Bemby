@@ -1,4 +1,4 @@
-# Bemby v0.8.5
+# Bemby v0.9.5
 
 [English](#english) | **简体中文**
 
@@ -14,9 +14,12 @@
 
 - **多账号** — 管理多个 Telegram 账号，每个账号通过 MTProto 独立认证
 - **两种任务类型**
-  - **签到** — 在随机的每日时间发送 `/start` 给 Telegram 机器人并点击回复按钮
+  - **签到** — 在随机的每日时间向 Telegram 机器人发送可配置命令并点击回复按钮
   - **Emby 观看** — 模拟 SenPlayer 在 Emby 服务器上的会话，定期上报播放进度
+- **命令模板** — 支持在启动命令中嵌入随机占位符（`{word:N}`、`{num:N}`、`{alpha:N}`、`{uuid}`）
 - **调度器** — 在每个任务可配置的每日时间窗口内随机选取执行时间；失败时自动重试
+- **详细日志** — 点击签到日志行可展开对话详情，以仿 Telegram 气泡样式呈现发送命令、机器人回复（含图片、内联键盘）及按钮点击后的消息变化
+- **停止运行中的任务** — 可在日志列表中随时中止正在执行的签到任务
 - **Web 管理门户** — Vue 3 单页应用，用于管理账号、任务、设置和查看日志
 - **持久化存储** — SQLite 数据库，重启和容器升级后数据不丢失
 
@@ -68,7 +71,9 @@ docker run -d \
 | 任务类型                | `签到` 或 `Emby 观看`                                             |
 | 账号                    | 已认证的 Telegram 账号（仅签到任务）                               |
 | 机器人用户名            | Telegram 机器人 handle，可带或不带 `@`（仅签到任务）              |
-| 服务器地址              | Emby 服务器地址，如 `https://emby.example.com:443`（仅 Emby 观看）|
+| 启动命令                | 发送给机器人的命令，默认 `/start`；支持模板占位符（仅签到任务）   |
+| 签到按钮文字            | 用于匹配内联键盘按钮的文字，默认 `签到`（仅签到任务）             |
+| 服务器地址              | Emby 服务器地址，如 `https://emby.example.com:443`（仅 Emby 观看）；粘贴含协议和端口的完整 URL 时可自动解析 |
 | Emby 用户名/密码        | Emby 账号凭证（仅 Emby 观看）                                     |
 | 时间窗口开始/结束        | 每日执行时间窗口，格式 HHMM，如 `1400`–`1600`                    |
 | 最大重试次数            | 失败时的重试次数                                                   |
@@ -226,9 +231,12 @@ A self-hosted automation tool for managing daily Telegram bot check-ins (签到)
 
 - **Multi-account** — manage multiple Telegram accounts, each independently authenticated via MTProto
 - **Two job types**
-  - **Check-in (签到)** — sends `/start` to a Telegram bot and clicks the reply button on a randomised daily schedule
+  - **Check-in (签到)** — sends a configurable command to a Telegram bot and clicks the reply button on a randomised daily schedule
   - **Emby Watch** — simulates a SenPlayer session on an Emby server, reporting playback progress at regular intervals
+- **Command templates** — embed random placeholders in the start command (`{word:N}`, `{num:N}`, `{alpha:N}`, `{uuid}`)
 - **Scheduler** — picks a random time within a configurable daily window per job; handles retry on failure
+- **Rich log detail** — click any check-in log row to expand a Telegram-style chat view showing the command sent, bot reply (photo + text + inline keyboard), button click, and the bot's edited follow-up message
+- **Stop running jobs** — cancel an in-progress check-in directly from the log list
 - **Web admin portal** — Vue 3 SPA for managing accounts, jobs, settings, and viewing logs
 - **Persistent storage** — SQLite database, survives restarts and container upgrades
 
@@ -280,7 +288,9 @@ Go to **Jobs** and click **Add Job**. Configure:
 | Job Type           | `Check-in` or `Emby Watch`                                       |
 | Account            | Authenticated Telegram account (check-in only)                   |
 | Bot Username       | Telegram bot handle, with or without `@` (check-in only)         |
-| Server URL         | Emby server address, e.g. `https://emby.example.com:443` (Emby Watch only) |
+| Start Command      | Command sent to the bot, default `/start`; supports template placeholders (check-in only) |
+| Check-in Button    | Text to match against the inline keyboard button, default `签到` (check-in only) |
+| Server URL         | Emby server address, e.g. `https://emby.example.com:443` (Emby Watch only); paste a full URL with protocol and port to auto-fill the fields |
 | Emby Username/Password | Emby account credentials (Emby Watch only)                  |
 | Window Start/End   | Daily schedule window in HHMM format, e.g. `1400`-`1600`        |
 | Max Retries        | Number of retry attempts on failure                              |

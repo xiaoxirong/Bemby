@@ -35,6 +35,44 @@ class BotReplyTimeoutError extends Error {
   }
 }
 
+// ── Command template expansion ────────────────────────────────────────────────
+
+const LOWER = 'abcdefghijklmnopqrstuvwxyz';
+const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const DIGITS = '0123456789';
+const ALNUM = LOWER + UPPER + DIGITS;
+
+function pick(chars: string, len: number): string {
+  return Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+/**
+ * Expands template placeholders before sending a command.
+ * Syntax: {type} or {type:length}
+ * Types: word (lowercase), WORD (uppercase), num (digits), alpha (mixed alnum), uuid
+ */
+export function expandCommand(template: string): string {
+  return template.replace(/\{(\w+)(?::(\d+))?\}/g, (match, type: string, lenStr?: string) => {
+    const len = lenStr ? parseInt(lenStr, 10) : 0;
+    switch (type) {
+      case 'word':  return pick(LOWER, len || 6);
+      case 'WORD':  return pick(UPPER, len || 6);
+      case 'num':   return pick(DIGITS, len || 6);
+      case 'alpha': return pick(ALNUM, len || 8);
+      case 'uuid': {
+        // RFC 4122 v4
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = Math.random() * 16 | 0;
+          return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        });
+      }
+      default: return match; // unknown placeholder — leave as-is
+    }
+  });
+}
+
+// ── HTML helpers ──────────────────────────────────────────────────────────────
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -261,8 +299,10 @@ export async function runCheckin(
 
   try {
     if (signal?.aborted) throw new Error('Job cancelled');
+    const expandedCommand = expandCommand(startCommand);
+    log.commandSent = expandedCommand; // record what was actually sent, not the template
     const replyPromise = waitForBotReply(client, botUsername, replyTimeoutMs, signal);
-    await client.sendMessage(botUsername, { message: startCommand });
+    await client.sendMessage(botUsername, { message: expandedCommand });
 
     let messages: Api.Message[];
     try {
