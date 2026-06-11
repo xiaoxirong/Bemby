@@ -20,6 +20,8 @@ type JobRow = {
   enabled: number;
   created_at: string;
   config: string | null;
+  start_command: string;
+  checkin_button: string;
   account_name?: string;
 };
 
@@ -50,6 +52,8 @@ function rowToJob(row: JobRow): Job & { accountName?: string } {
     enabled: Boolean(row.enabled),
     createdAt: row.created_at,
     config: row.config ?? null,
+    startCommand: row.start_command || '/start',
+    checkinButton: row.checkin_button || '签到',
   };
 }
 
@@ -68,6 +72,7 @@ router.post('/', (req, res) => {
     name, accountId, jobType, botUsername,
     scheduleWindowStart, scheduleWindowEnd, timezone,
     replyTimeoutMs, retryMax, enabled, config,
+    startCommand, checkinButton,
   } = req.body as Record<string, any>;
 
   const resolvedType = jobType ?? 'checkin';
@@ -79,8 +84,8 @@ router.post('/', (req, res) => {
   const result = db.prepare(`
     INSERT INTO jobs
       (name, account_id, job_type, bot_username, schedule_window_start, schedule_window_end,
-       timezone, reply_timeout_ms, retry_max, enabled, config)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       timezone, reply_timeout_ms, retry_max, enabled, config, start_command, checkin_button)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name, resolvedType === 'embywatch' ? null : Number(accountId), resolvedType, botUsername,
     Number(scheduleWindowStart ?? 1400), Number(scheduleWindowEnd ?? 1600),
@@ -88,6 +93,8 @@ router.post('/', (req, res) => {
     Number(replyTimeoutMs ?? 40000), Number(retryMax ?? 5),
     enabled !== false ? 1 : 0,
     config != null ? JSON.stringify(config) : null,
+    (startCommand as string | undefined)?.trim() || '/start',
+    (checkinButton as string | undefined)?.trim() || '签到',
   );
 
   const row = db.prepare('SELECT j.*, a.name AS account_name FROM jobs j LEFT JOIN tg_accounts a ON j.account_id = a.id WHERE j.id = ?').get(result.lastInsertRowid) as JobRow;
@@ -103,6 +110,7 @@ router.put('/:id', (req, res) => {
     name, accountId, jobType, botUsername,
     scheduleWindowStart, scheduleWindowEnd, timezone,
     replyTimeoutMs, retryMax, enabled, config,
+    startCommand, checkinButton,
   } = req.body as Record<string, any>;
 
   const updatedType = jobType ?? existing.job_type;
@@ -110,7 +118,8 @@ router.put('/:id', (req, res) => {
     UPDATE jobs SET
       name = ?, account_id = ?, job_type = ?, bot_username = ?,
       schedule_window_start = ?, schedule_window_end = ?, timezone = ?,
-      reply_timeout_ms = ?, retry_max = ?, enabled = ?, config = ?
+      reply_timeout_ms = ?, retry_max = ?, enabled = ?, config = ?,
+      start_command = ?, checkin_button = ?
     WHERE id = ?
   `).run(
     name ?? existing.name,
@@ -124,6 +133,8 @@ router.put('/:id', (req, res) => {
     Number(retryMax ?? existing.retry_max),
     enabled !== undefined ? (enabled ? 1 : 0) : existing.enabled,
     config !== undefined ? (config != null ? JSON.stringify(config) : null) : existing.config,
+    (startCommand as string | undefined)?.trim() || '/start',
+    (checkinButton as string | undefined)?.trim() || '签到',
     req.params.id,
   );
 

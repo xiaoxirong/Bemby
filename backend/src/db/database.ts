@@ -69,6 +69,8 @@ try { db.exec('ALTER TABLE jobs ADD COLUMN config TEXT'); } catch {}
 try { db.exec("UPDATE settings SET value = 'Yamby' WHERE key = 'default_device_name' AND value = 'tg-runner'"); } catch {}
 try { db.exec("UPDATE settings SET value = 'Mac' WHERE key = 'default_device_name' AND value = 'Yamby'"); } catch {}
 try { db.exec("UPDATE settings SET value = 'SenPlayer/6.1.0 CFNetwork/1490.0.4 Darwin/23.2.0' WHERE key = 'default_ua' AND value = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'"); } catch {}
+try { db.exec("ALTER TABLE jobs ADD COLUMN start_command TEXT NOT NULL DEFAULT '/start'"); } catch {}
+try { db.exec("ALTER TABLE jobs ADD COLUMN checkin_button TEXT NOT NULL DEFAULT '签到'"); } catch {}
 
 // Make account_id nullable so embywatch jobs don't require a Telegram account
 try {

@@ -13,7 +13,7 @@ export async function runJob(job: Job, account: TgAccount | null): Promise<void>
         case 'checkin': {
           if (!account) throw new Error('No account linked to this job');
           if (!account.sessionString) throw new Error('Account has no session -- authenticate first');
-          await runCheckin(account.apiId, account.apiHash, account.sessionString, job.botUsername, job.replyTimeoutMs);
+          await runCheckin(account.apiId, account.apiHash, account.sessionString, job.botUsername, job.replyTimeoutMs, job.startCommand, job.checkinButton);
           break;
         }
         case 'embywatch': {

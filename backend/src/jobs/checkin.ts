@@ -3,8 +3,6 @@ import { LogLevel } from 'telegram/extensions/Logger';
 import { StringSession } from 'telegram/sessions';
 import { NewMessage, NewMessageEvent } from 'telegram/events';
 
-const CHECKIN_BUTTON = '签到';
-
 function waitForBotReply(client: TelegramClient, botUsername: string, timeoutMs: number): Promise<Api.Message> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -28,7 +26,9 @@ export async function runCheckin(
   apiHash: string,
   sessionString: string,
   botUsername: string,
-  replyTimeoutMs = 40_000
+  replyTimeoutMs = 40_000,
+  startCommand = '/start',
+  checkinButton = '签到',
 ): Promise<void> {
   const client = new TelegramClient(new StringSession(sessionString), apiId, apiHash, {
     connectionRetries: 5,
@@ -39,7 +39,7 @@ export async function runCheckin(
   await client.connect();
 
   const replyPromise = waitForBotReply(client, botUsername, replyTimeoutMs);
-  await client.sendMessage(botUsername, { message: '/start' });
+  await client.sendMessage(botUsername, { message: startCommand });
   const msg = await replyPromise;
 
   const peer = await client.getInputEntity(botUsername);
@@ -47,7 +47,7 @@ export async function runCheckin(
 
   for (const row of (msg as any).buttons ?? []) {
     for (const btn of row) {
-      if (btn.text.includes(CHECKIN_BUTTON)) {
+      if (btn.text.includes(checkinButton)) {
         const callbackData = (btn.button as Api.KeyboardButtonCallback).data;
         await client.invoke(new Api.messages.GetBotCallbackAnswer({
           peer,
@@ -67,6 +67,6 @@ export async function runCheckin(
   }
 
   if (!clicked) {
-    throw new Error(`Button "${CHECKIN_BUTTON}" not found in bot reply`);
+    throw new Error(`Button "${checkinButton}" not found in bot reply`);
   }
 }

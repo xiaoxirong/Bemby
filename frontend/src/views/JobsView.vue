@@ -67,7 +67,15 @@
         <h3 class="modal-title">{{ t(editTarget ? 'jobs.editTitle' : 'jobs.addTitle') }}</h3>
         <div v-if="formError" class="error-msg">{{ formError }}</div>
 
-        <!-- Row 1: Job Name + Job Type -->
+        <!-- Enabled -->
+        <div style="margin-bottom:14px">
+          <label class="form-check">
+            <input v-model="form.enabled" type="checkbox" />
+            <span>{{ t('jobs.labelEnabled') }}</span>
+          </label>
+        </div>
+
+        <!-- Job Name + Job Type -->
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">{{ t('jobs.labelName') }} <span style="color:#e63946">*</span></label>
@@ -106,7 +114,7 @@
               <option value="http">http</option>
             </select>
             <span style="color:#aaa;font-size:13px;flex-shrink:0">://</span>
-            <input v-model.trim="embyServer.host" class="form-input" placeholder="emby.xxxx.com" />
+            <input v-model.trim="embyServer.host" class="form-input" placeholder="emby.xxxx.com" @paste="handleEmbyHostPaste" />
             <span style="color:#aaa;font-size:13px;flex-shrink:0">:</span>
             <input v-model.number="embyServer.port" class="form-input" type="number" min="1" max="65535" style="width:72px;flex-shrink:0" placeholder="443" />
           </div>
@@ -142,16 +150,6 @@
           </div>
         </template>
 
-        <!-- checkin-specific fields -->
-        <template v-if="form.jobType === 'checkin'">
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">{{ t('jobs.labelReplyTimeout') }}</label>
-              <input v-model.number="form.replyTimeoutMs" class="form-input" type="number" />
-            </div>
-          </div>
-        </template>
-
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">{{ t('jobs.labelWindowStart') }}</label>
@@ -163,19 +161,40 @@
           </div>
         </div>
 
-        <div class="form-row">
+        <!-- checkin-specific fields -->
+        <template v-if="form.jobType === 'checkin'">
+          <div class="form-row" style="align-items:end">
+            <div class="form-group">
+              <label class="form-label">
+                {{ t('jobs.labelStartCommand') }}
+                <span style="color:#aaa;font-weight:400"> — {{ t('common.blankForDefault') }}</span>
+              </label>
+              <input v-model.trim="form.startCommand" class="form-input" placeholder="/start" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">
+                {{ t('jobs.labelCheckinButton') }}
+                <span style="color:#aaa;font-weight:400"> — {{ t('common.blankForDefault') }}</span>
+              </label>
+              <input v-model.trim="form.checkinButton" class="form-input" placeholder="签到" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">{{ t('jobs.labelReplyTimeout') }}</label>
+              <input v-model.number="form.replyTimeoutMs" class="form-input" type="number" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('jobs.labelMaxRetries') }}</label>
+              <input v-model.number="form.retryMax" class="form-input" type="number" min="1" max="10" />
+            </div>
+          </div>
+        </template>
+
+        <div v-if="form.jobType === 'embywatch'" class="form-row">
           <div class="form-group">
             <label class="form-label">{{ t('jobs.labelMaxRetries') }}</label>
             <input v-model.number="form.retryMax" class="form-input" type="number" min="1" max="10" />
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:4px">
-            <label class="form-check">
-              <input v-model="form.enabled" type="checkbox" />
-              <span>{{ t('jobs.labelEnabled') }}</span>
-            </label>
           </div>
         </div>
 
@@ -215,6 +234,8 @@ const form = reactive({
   replyTimeoutMs: 40000,
   retryMax: 5,
   enabled: true,
+  startCommand: '',
+  checkinButton: '',
 });
 const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; userAgent: string }>({
   username: '',
@@ -276,6 +297,8 @@ function openAdd() {
     replyTimeoutMs: 40000,
     retryMax: Number(settings.value?.default_max_retry ?? 5),
     enabled: true,
+    startCommand: '',
+    checkinButton: '',
   });
   Object.assign(embyCfg, { username: '', password: '', playDuration: '', userAgent: '' });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
@@ -290,6 +313,8 @@ function openEdit(j: Job) {
     botUsername: j.botUsername, scheduleWindowStart: j.scheduleWindowStart,
     scheduleWindowEnd: j.scheduleWindowEnd, timezone: j.timezone,
     replyTimeoutMs: j.replyTimeoutMs, retryMax: j.retryMax, enabled: j.enabled,
+    startCommand: j.startCommand === '/start' ? '' : (j.startCommand ?? ''),
+    checkinButton: j.checkinButton === '签到' ? '' : (j.checkinButton ?? ''),
   });
   if (j.jobType === 'embywatch') {
     // Parse stored URL back into protocol / host / port fields
@@ -322,6 +347,21 @@ function openEdit(j: Job) {
   showForm.value = true;
 }
 
+function handleEmbyHostPaste(event: ClipboardEvent) {
+  const text = event.clipboardData?.getData('text')?.trim();
+  if (!text) return;
+  // Match optional protocol, host, optional port, optional path
+  const match = text.match(/^(?:(https?):\/\/)?([^:/\s]+)(?::(\d+))?(?:\/.*)?$/i);
+  if (!match) return;
+  const [, proto, host, portStr] = match;
+  // Plain hostname with no protocol or port — nothing to split, paste normally
+  if (!proto && !portStr) return;
+  event.preventDefault();
+  if (proto === 'https' || proto === 'http') embyServer.protocol = proto as 'https' | 'http';
+  embyServer.host = host;
+  if (portStr) embyServer.port = Number(portStr);
+}
+
 function buildConfig(): EmbywatchConfig | null {
   if (form.jobType !== 'embywatch') return null;
   const cfg: EmbywatchConfig = { username: embyCfg.username, password: embyCfg.password };
@@ -349,7 +389,12 @@ async function saveJob() {
   saving.value = true;
   try {
     const rawCfg = buildConfig();
-    const payload = { ...form, config: rawCfg ?? null };
+    const payload = {
+      ...form,
+      config: rawCfg ?? null,
+      startCommand: form.startCommand || undefined,
+      checkinButton: form.checkinButton || undefined,
+    };
     if (editTarget.value) {
       await jobsApi.update(editTarget.value.id, payload);
     } else {

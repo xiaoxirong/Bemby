@@ -57,6 +57,8 @@ export type Job = {
   enabled: boolean;
   createdAt: string;
   config: string | null;
+  startCommand: string;
+  checkinButton: string;
 };
 
 export type Log = {
