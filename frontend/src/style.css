@@ -493,8 +493,11 @@ tr:hover td {
 }
 
 .mobile-logo-img {
-	width: 30px;
+	width: 45px;
 	height: 30px;
+	margin-left: -12px;
+	margin-right: -15px;
+	margin-top: -5px;
 	border-radius: 7px;
 	display: block;
 	flex-shrink: 0;
