@@ -271,6 +271,112 @@ tr:hover td { background: #fafafa; }
   margin-bottom: 16px;
 }
 
+/* ── GitHub link ─────────────────────────────────────────────────────────────── */
+
+.github-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: #888;
+  text-decoration: none;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: background 0.15s, color 0.15s;
+  margin-bottom: 4px;
+}
+
+.github-link:hover { background: rgba(255,255,255,0.07); color: #fff; }
+
+/* ── Mobile header ───────────────────────────────────────────────────────────── */
+
+.mobile-header {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  background: #1a1a2e;
+  padding: 0 16px;
+  height: 52px;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  flex-shrink: 0;
+}
+
+.mobile-header-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.mobile-logo { font-size: 16px; font-weight: 700; color: #fff; }
+.mobile-version { font-size: 10px; color: rgba(255,255,255,0.35); }
+
+.mobile-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hamburger-btn {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 28px;
+  height: 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.hamburger-btn span {
+  display: block;
+  height: 2px;
+  background: #aaa;
+  border-radius: 2px;
+  transition: background 0.15s;
+}
+
+.hamburger-btn:hover span { background: #fff; }
+
+/* ── Sidebar backdrop ────────────────────────────────────────────────────────── */
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 299;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  .layout { flex-direction: column; }
+
+  .mobile-header { display: flex; }
+
+  .sidebar {
+    position: fixed;
+    top: 52px;
+    left: 0;
+    bottom: 0;
+    z-index: 300;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+  }
+
+  .sidebar.is-open { transform: translateX(0); }
+
+  .sidebar-backdrop { display: block; top: 52px; }
+
+  /* lang switcher is in the mobile header, hide it in the sidebar */
+  .sidebar .lang-switcher { display: none; }
+
+  .main { padding: 16px; }
+}
+
 /* ── Login page ──────────────────────────────────────────────────────────────── */
 
 .login-page {
@@ -291,3 +397,19 @@ tr:hover td { background: #fafafa; }
 
 .login-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
 .login-subtitle { color: #888; margin-bottom: 24px; font-size: 13px; }
+
+.captcha-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  background: #f8f8f8;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.captcha-img { line-height: 0; }
+.captcha-img svg { display: block; height: 48px; width: auto; border-radius: 4px; }
+
+.captcha-refresh { margin-left: auto; font-size: 16px; padding: 4px 8px; }

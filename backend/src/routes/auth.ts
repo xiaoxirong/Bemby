@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
+import svgCaptcha from 'svg-captcha';
 import { db } from '../db/database';
 import { getJwtSecret, requireAuth } from '../middleware/auth';
 
@@ -35,10 +36,41 @@ function getStoredCredentials(): { username: string; passwordHash: string | null
   };
 }
 
+router.get('/captcha', (_req, res) => {
+  const captcha = svgCaptcha.create({ noise: 2, color: true, size: 5, ignoreChars: '0oO1lI' });
+  // Store the answer (lowercase) in a short-lived signed token — no session needed
+  const captchaToken = jwt.sign({ cap: captcha.text.toLowerCase() }, getJwtSecret(), { expiresIn: '5m' });
+  res.json({ svg: captcha.data, captchaToken });
+});
+
 router.post('/login', loginLimiter, (req, res) => {
-  const { username, password } = req.body as { username?: string; password?: string };
+  const { username, password, captchaToken, captchaAnswer } = req.body as {
+    username?: string;
+    password?: string;
+    captchaToken?: string;
+    captchaAnswer?: string;
+  };
+
   if (!username || !password) {
     res.status(400).json({ error: 'Username and password are required' });
+    return;
+  }
+
+  if (!captchaToken || !captchaAnswer) {
+    res.status(400).json({ error: 'Captcha is required' });
+    return;
+  }
+
+  let captchaPayload: { cap?: string };
+  try {
+    captchaPayload = jwt.verify(captchaToken, getJwtSecret()) as { cap?: string };
+  } catch {
+    res.status(400).json({ error: 'Captcha expired, please refresh' });
+    return;
+  }
+
+  if (captchaPayload.cap !== captchaAnswer.toLowerCase().trim()) {
+    res.status(400).json({ error: 'Incorrect captcha' });
     return;
   }
 

@@ -99,8 +99,10 @@ export type ScheduleStatus = {
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
 export const authApi = {
-  login: (username: string, password: string) =>
-    api.post<{ token: string }>('/auth/login', { username, password }).then(r => r.data),
+  getCaptcha: () =>
+    api.get<{ svg: string; captchaToken: string }>('/auth/captcha').then(r => r.data),
+  login: (username: string, password: string, captchaToken: string, captchaAnswer: string) =>
+    api.post<{ token: string }>('/auth/login', { username, password, captchaToken, captchaAnswer }).then(r => r.data),
   changeCredentials: (currentPassword: string, username?: string, newPassword?: string) =>
     api.put<{ message: string }>('/auth/credentials', { currentPassword, username, newPassword }).then(r => r.data),
 };
