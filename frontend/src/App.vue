@@ -4,18 +4,18 @@
   </div>
   <div v-else class="layout">
     <header class="mobile-header">
-      <div class="mobile-header-brand">
-        <img src="/logo.png" alt="Bemby" class="mobile-logo-img" />
-        <span class="mobile-brand-name">BEMBY</span>
-        <span class="mobile-version">v{{ APP_VERSION }}</span>
-      </div>
-      <div class="mobile-header-actions">
+      <button class="hamburger-btn" @click="sidebarOpen = !sidebarOpen" :aria-expanded="sidebarOpen">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="mobile-header-right">
         <button class="lang-btn" @click="setLocale(locale === 'zh' ? 'en' : 'zh')">
           {{ locale === 'zh' ? 'EN' : '中文' }}
         </button>
-        <button class="hamburger-btn" @click="sidebarOpen = !sidebarOpen" :aria-expanded="sidebarOpen">
-          <span></span><span></span><span></span>
-        </button>
+        <div class="mobile-header-brand">
+          <img src="/logo.png" alt="Bemby" class="mobile-logo-img" />
+          <span class="mobile-brand-name">BEMBY</span>
+          <span class="mobile-version">v{{ APP_VERSION }}</span>
+        </div>
       </div>
     </header>
 

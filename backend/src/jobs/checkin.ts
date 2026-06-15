@@ -253,10 +253,11 @@ export async function parseMessages(
   const html = htmlParts.join('<hr style="margin:8px 0;border:none;border-top:1px solid #d0d0d0">');
 
   const buttons: string[][] = [];
-  const buttonsMsg = [...messages].reverse().find(m => m.buttons);
+  const buttonsMsg = [...messages].reverse().find(m => (m as any).replyMarkup instanceof Api.ReplyInlineMarkup);
   if (buttonsMsg) {
-    for (const row of (buttonsMsg as any).buttons ?? []) {
-      const rowTexts = (row as any[]).map((btn: any) => btn.text as string);
+    const markup = (buttonsMsg as any).replyMarkup as Api.ReplyInlineMarkup;
+    for (const row of markup.rows) {
+      const rowTexts = row.buttons.map(btn => (btn as any).text as string).filter(Boolean);
       if (rowTexts.length) buttons.push(rowTexts);
     }
   }
@@ -312,7 +313,9 @@ function waitForBotReply(
     const handler = async (event: NewMessageEvent) => {
       const msg = event.message as Api.Message;
       collected.push(msg);
-      if (msg.buttons) { cleanup(); resolve(collected); }
+      // Use replyMarkup (raw TLObject field) instead of msg.buttons getter, which
+      // requires inputChat to be resolved and silently returns undefined when it isn't.
+      if ((msg as any).replyMarkup) { cleanup(); resolve(collected); }
     };
 
     client.addEventHandler(handler, new NewMessage({ fromUsers: [botUsername] }));
@@ -436,19 +439,20 @@ export async function runCheckin(
     log.commandResponseImages = parsed.images;
     log.availableButtons = parsed.buttons;
 
-    const buttonsMsg = [...messages].reverse().find(m => m.buttons);
+    const buttonsMsg = [...messages].reverse().find(m => (m as any).replyMarkup instanceof Api.ReplyInlineMarkup);
     if (!buttonsMsg) throw new Error('No message with buttons received');
 
     if (signal?.aborted) throw new Error('Job cancelled');
 
-    const allBtnRows: any[] = (buttonsMsg as any).buttons ?? [];
+    const markup = (buttonsMsg as any).replyMarkup as Api.ReplyInlineMarkup;
+    const allBtnRows = markup.rows;
 
     // Resolve target button text and match mode
     let targetText: string;
     let useExactMatch: boolean;
 
     if (checkinButton === '{anyBtn}') {
-      const flat = allBtnRows.flatMap((row: any[]) => row.map((btn: any) => btn.text as string));
+      const flat = allBtnRows.flatMap(row => row.buttons.map((btn: any) => btn.text as string));
       if (!flat.length) throw new Error('No buttons available for {anyBtn}');
       targetText = flat[Math.floor(Math.random() * flat.length)];
       useExactMatch = true;
@@ -470,21 +474,22 @@ export async function runCheckin(
     let clicked = false;
 
     for (const row of allBtnRows) {
-      for (const btn of row) {
-        const matches = useExactMatch ? btn.text === targetText : btn.text.includes(targetText);
+      for (const btn of row.buttons) {
+        const btnText = (btn as any).text as string;
+        const matches = useExactMatch ? btnText === targetText : btnText.includes(targetText);
         if (matches) {
           // Start watching BEFORE invoking to avoid a race condition.
           // Bots respond either by editing the original message or sending a new one.
           const editPromise = waitForBotMessageEdit(client, buttonsMsg.id, 10_000, signal);
           const newMsgPromise = waitForNewBotMessage(client, botUsername, 10_000, signal);
 
-          const callbackData = (btn.button as Api.KeyboardButtonCallback).data;
+          const callbackData = (btn as Api.KeyboardButtonCallback).data;
           const answer = await client.invoke(new Api.messages.GetBotCallbackAnswer({
             peer,
             msgId: buttonsMsg.id,
             data: callbackData,
           })) as Api.messages.BotCallbackAnswer;
-          log.buttonClicked = btn.text;
+          log.buttonClicked = btnText;
           if (answer.message) log.callbackAnswer = answer.message;
           clicked = true;
 

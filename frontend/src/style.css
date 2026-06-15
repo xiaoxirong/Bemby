@@ -515,7 +515,7 @@ tr:hover td {
 	color: rgba(255, 255, 255, 0.35);
 }
 
-.mobile-header-actions {
+.mobile-header-right {
 	display: flex;
 	align-items: center;
 	gap: 8px;

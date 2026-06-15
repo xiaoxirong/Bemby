@@ -48,8 +48,7 @@ function waitForReply(
     const handler = async (event: NewMessageEvent) => {
       const msg = event.message as Api.Message;
       collected.push(msg);
-      // Resolve early once we have a message with buttons
-      if (msg.buttons) { cleanup(); resolve(collected); }
+      if ((msg as any).replyMarkup) { cleanup(); resolve(collected); }
     };
 
     client.addEventHandler(handler, new NewMessage({ fromUsers: [fromUsername] }));
@@ -85,7 +84,7 @@ function waitForButtonsMessage(
     const handler = async (event: NewMessageEvent) => {
       const msg = event.message as Api.Message;
       collected.push(msg);
-      if (msg.buttons) { cleanup(); resolve(collected); }
+      if ((msg as any).replyMarkup) { cleanup(); resolve(collected); }
     };
 
     client.addEventHandler(handler, new NewMessage({ fromUsers: [fromUsername] }));
@@ -141,7 +140,7 @@ export async function runCustom(
             step.label = `Wait reply (max ${action.maxWaitMs}ms)`;
             const msgs = await waitForReply(client, botUsername, action.maxWaitMs, signal);
             lastMessages = msgs;
-            const btnMsg = [...msgs].reverse().find(m => m.buttons) ?? null;
+            const btnMsg = [...msgs].reverse().find(m => (m as any).replyMarkup instanceof Api.ReplyInlineMarkup) ?? null;
             if (btnMsg) lastButtonsMsg = btnMsg;
             const parsed = await parseMessages(msgs, client, signal);
             step.responseHtml = parsed.html || undefined;
@@ -172,7 +171,7 @@ export async function runCustom(
             if (!buttonsMsg) {
               const msgs = await waitForButtonsMessage(client, botUsername, action.maxWaitMs, signal);
               lastMessages = msgs;
-              buttonsMsg = [...msgs].reverse().find(m => m.buttons) ?? null;
+              buttonsMsg = [...msgs].reverse().find(m => (m as any).replyMarkup instanceof Api.ReplyInlineMarkup) ?? null;
               if (buttonsMsg) lastButtonsMsg = buttonsMsg;
               // Log the bot messages we received while waiting (reply to prior send_command)
               const preParsed = await parseMessages(msgs, client, signal);
@@ -183,8 +182,9 @@ export async function runCustom(
             }
             if (!buttonsMsg) throw new Error('No message with buttons available');
 
-            const allBtnRows: any[] = (buttonsMsg as any).buttons ?? [];
-            const flat = allBtnRows.flatMap((row: any[]) => row.map((b: any) => b.text as string));
+            const btnMarkup = (buttonsMsg as any).replyMarkup as Api.ReplyInlineMarkup;
+            const allBtnRows = btnMarkup.rows;
+            const flat = allBtnRows.flatMap(row => row.buttons.map((b: any) => b.text as string));
 
             let targetText: string;
             let useExactMatch: boolean;
@@ -194,7 +194,7 @@ export async function runCustom(
               targetText = flat[Math.floor(Math.random() * flat.length)];
               useExactMatch = true;
             } else if (isAiBtn(action.button)) {
-              const buttons: string[][] = allBtnRows.map((row: any[]) => row.map((b: any) => b.text as string));
+              const buttons: string[][] = allBtnRows.map(row => row.buttons.map((b: any) => b.text as string));
               const hint = parseAiBtnHint(action.button);
               // If buttonsMsg was cached (no fresh parse), parse it now so we have HTML + images for AI
               if (!step.preClickHtml && !preClickImages.length) {
@@ -225,21 +225,22 @@ export async function runCustom(
                 const msgs = await waitForButtonsMessage(client, botUsername, action.maxWaitMs, signal).catch(() => null);
                 if (msgs) {
                   lastMessages = msgs;
-                  const bm = [...msgs].reverse().find(m => m.buttons);
+                  const bm = [...msgs].reverse().find(m => (m as any).replyMarkup instanceof Api.ReplyInlineMarkup);
                   if (bm) { buttonsMsg = bm; lastButtonsMsg = bm; }
                 }
               }
 
-              const rows: any[] = (buttonsMsg as any).buttons ?? [];
+              const rows = ((buttonsMsg as any).replyMarkup as Api.ReplyInlineMarkup).rows;
               for (const row of rows) {
-                for (const btn of row) {
-                  const matches = useExactMatch ? btn.text === targetText : btn.text.includes(targetText);
+                for (const btn of row.buttons) {
+                  const btnText = (btn as any).text as string;
+                  const matches = useExactMatch ? btnText === targetText : btnText.includes(targetText);
                   if (!matches) continue;
 
                   const editPromise = waitForBotMessageEdit(client, buttonsMsg!.id, 10_000, signal);
                   const newMsgPromise = waitForNewBotMessage(client, botUsername, 10_000, signal);
 
-                  const callbackData = (btn.button as Api.KeyboardButtonCallback).data;
+                  const callbackData = (btn as Api.KeyboardButtonCallback).data;
                   const answer = await client.invoke(new Api.messages.GetBotCallbackAnswer({
                     peer,
                     msgId: buttonsMsg!.id,
@@ -252,7 +253,7 @@ export async function runCustom(
                   const responseMsg = await Promise.race([editPromise, newMsgPromise]);
                   if (responseMsg && !signal?.aborted) {
                     lastMessages = [responseMsg];
-                    if (responseMsg.buttons) lastButtonsMsg = responseMsg;
+                    if ((responseMsg as any).replyMarkup instanceof Api.ReplyInlineMarkup) lastButtonsMsg = responseMsg;
                     const parsed = await parseMessages([responseMsg], client, signal);
                     step.responseHtml = parsed.html || undefined;
                     step.responseImage = parsed.images[0];
@@ -260,8 +261,8 @@ export async function runCustom(
                     step.responseButtons = parsed.buttons.length ? parsed.buttons : undefined;
                   }
 
-                  step.clickedButton = btn.text;
-                  step.result = `Clicked "${btn.text}"`;
+                  step.clickedButton = btnText;
+                  step.result = `Clicked "${btnText}"`;
                   break;
                 }
                 if (clicked) break;

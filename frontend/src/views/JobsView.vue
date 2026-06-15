@@ -30,6 +30,10 @@
           <option value="">{{ t('jobs.allAccounts') }}</option>
           <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
         </select>
+        <select v-if="botUrlOptions.length > 1" v-model="filterBotUrl" class="form-select" style="width:180px;height:30px;font-size:13px;padding:0 8px">
+          <option value="">{{ t('jobs.allBotUrls') }}</option>
+          <option v-for="b in botUrlOptions" :key="b" :value="b">{{ b }}</option>
+        </select>
       </div>
       <div class="table-wrap">
         <table>
@@ -378,16 +382,22 @@ const running = ref(new Set<number>());
 
 const filterType = ref('');
 const filterAccountId = ref<number | ''>('');
+const filterBotUrl = ref('');
 const filterOptions = computed(() => [
   { value: '', label: t('common.all') },
   { value: 'checkin', label: t('logs.jobType.checkin') },
   { value: 'embywatch', label: t('logs.jobType.embywatch') },
   { value: 'custom', label: t('logs.jobType.custom') },
 ]);
+const botUrlOptions = computed(() => {
+  const vals = [...new Set(jobs.value.map(j => j.botUsername).filter(Boolean))];
+  return vals.sort();
+});
 const filteredJobs = computed(() =>
   jobs.value.filter(j =>
     (!filterType.value || j.jobType === filterType.value) &&
-    (filterAccountId.value === '' || j.accountId === filterAccountId.value),
+    (filterAccountId.value === '' || j.accountId === filterAccountId.value) &&
+    (!filterBotUrl.value || j.botUsername === filterBotUrl.value),
   ),
 );
 
