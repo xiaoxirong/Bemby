@@ -142,7 +142,12 @@
                                 <textarea v-model="debugPrompt" class="debug-panel-textarea" rows="5" :placeholder="t('logs.debug.promptPlaceholder')" />
                                 <div class="debug-panel-controls">
                                   <span class="debug-tokens-label">{{ t('logs.debug.model') }}</span>
-                                  <input v-model="debugModel" class="form-input debug-model-input" type="text" :placeholder="t('logs.debug.model')" />
+                                  <select v-model="debugModel" class="form-select debug-model-input">
+                                  <option value="">{{ t('logs.debug.modelDefault') }}</option>
+                                  <optgroup v-for="sup in debugSuppliers" :key="sup.id" :label="sup.name">
+                                    <option v-for="m in sup.models" :key="m.id" :value="m.model_id">{{ m.model_id }}</option>
+                                  </optgroup>
+                                </select>
                                   <span class="debug-tokens-label">{{ t('logs.debug.maxTokens') }}</span>
                                   <input v-model.number="debugMaxTokens" class="form-input debug-tokens-input" type="number" min="10" max="100000" step="100" />
                                   <button class="btn btn-primary btn-sm" :disabled="debugRunning" @click="runDebug">{{ debugRunning ? t('logs.debug.running') : t('logs.debug.run') }}</button>
@@ -341,7 +346,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { logsApi, jobsApi, debugApi, settingsApi, type Log, type Job, type CheckinAttemptLog, type EmbywatchLog, type CustomStepLog } from '../api/client';
+import { logsApi, jobsApi, debugApi, settingsApi, aiSuppliersApi, type Log, type Job, type CheckinAttemptLog, type EmbywatchLog, type CustomStepLog, type AiSupplier } from '../api/client';
 import { t, locale } from '../i18n';
 import { usePersistedRef } from '../composables/usePersistedRef';
 
@@ -364,6 +369,7 @@ const debugPrompt = ref('');
 const debugImages = ref<string[]>([]);
 const debugModel = ref('');
 const debugMaxTokens = ref(5000);
+const debugSuppliers = ref<AiSupplier[]>([]);
 const debugRunning = ref(false);
 const debugResponse = ref<string | null>(null);
 const debugError = ref<string | null>(null);
@@ -435,6 +441,7 @@ onMounted(async () => {
   jobs.value = await jobsApi.list();
   await load();
   settingsApi.get().then(s => { if (s.ai_model) debugModel.value = s.ai_model; }).catch(() => {});
+  aiSuppliersApi.list().then(list => { debugSuppliers.value = list; }).catch(() => {});
 });
 
 async function load() {

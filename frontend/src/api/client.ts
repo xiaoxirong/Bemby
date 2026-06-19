@@ -268,10 +268,7 @@ export type Settings = {
   default_ua: string;
   default_play_duration: string;
   default_device_name: string;
-  ai_base_url: string;
-  ai_api_key: string;
   ai_model: string;
-  ai_timeout_ms: string;
   notify_tg_username: string;
   notify_tg_events: string;
   ua_presets: string;
@@ -281,6 +278,38 @@ export const settingsApi = {
   get: () => api.get<Settings>("/settings").then((r) => r.data),
   update: (data: Partial<Settings>) =>
     api.put<Settings>("/settings", data).then((r) => r.data),
+};
+
+// ── AI Suppliers ──────────────────────────────────────────────────────────────
+
+export type AiModel = {
+  id: number;
+  supplier_id: number;
+  model_id: string;
+  label: string | null;
+};
+
+export type AiSupplier = {
+  id: number;
+  name: string;
+  base_url: string;
+  api_key: string;
+  timeout_ms: number;
+  models: AiModel[];
+};
+
+export const aiSuppliersApi = {
+  list: () => api.get<AiSupplier[]>('/ai-suppliers').then(r => r.data),
+  create: (data: Omit<AiSupplier, 'id' | 'models'>) =>
+    api.post<AiSupplier>('/ai-suppliers', data).then(r => r.data),
+  update: (id: number, data: Partial<Omit<AiSupplier, 'id' | 'models'>>) =>
+    api.put<AiSupplier>(`/ai-suppliers/${id}`, data).then(r => r.data),
+  remove: (id: number) =>
+    api.delete(`/ai-suppliers/${id}`).then(r => r.data),
+  addModel: (supplierId: number, model_id: string, label?: string) =>
+    api.post<AiModel>(`/ai-suppliers/${supplierId}/models`, { model_id, label }).then(r => r.data),
+  removeModel: (supplierId: number, modelId: number) =>
+    api.delete(`/ai-suppliers/${supplierId}/models/${modelId}`).then(r => r.data),
 };
 
 // ── Data Import / Export ───────────────────────────────────────────────────────

@@ -129,17 +129,26 @@ export async function callAI(
   maxTokens = 200,
   modelOverride?: string,
 ): Promise<{ response: string }> {
-  const apiKey = getAiSetting('ai_api_key', 'AI_API_KEY', '');
-  if (!apiKey) throw new Error('AI API key not configured — set it in Settings');
-
-  const baseUrl = getAiSetting('ai_base_url', 'AI_BASE_URL', 'https://openrouter.ai/api/v1').replace(/\/$/, '');
   const model = modelOverride?.trim() || getAiSetting('ai_model', 'AI_MODEL', 'nvidia/nemotron-nano-12b-v2-vl:free');
+
+  // Resolve credentials from the suppliers table (model_id → supplier)
+  type SupplierCreds = { api_key: string; base_url: string; timeout_ms: number };
+  const supplierRow = db.prepare(`
+    SELECT s.api_key, s.base_url, s.timeout_ms
+    FROM ai_models m JOIN ai_suppliers s ON s.id = m.supplier_id
+    WHERE m.model_id = ? LIMIT 1
+  `).get(model) as SupplierCreds | undefined;
+
+  const apiKey  = supplierRow?.api_key  ?? getAiSetting('ai_api_key',   'AI_API_KEY',  '');
+  const baseUrl = (supplierRow?.base_url ?? getAiSetting('ai_base_url', 'AI_BASE_URL', 'https://openrouter.ai/api/v1')).replace(/\/$/, '');
+  const AI_TIMEOUT_MS = supplierRow ? supplierRow.timeout_ms : Number(getAiSetting('ai_timeout_ms', 'AI_TIMEOUT_MS', '25000'));
+
+  if (!apiKey) throw new Error('AI API key not configured — set it in Settings');
 
   const content: object[] = [];
   for (const img of images) content.push({ type: 'image_url', image_url: { url: img } });
   content.push({ type: 'text', text: prompt });
 
-  const AI_TIMEOUT_MS = Number(getAiSetting('ai_timeout_ms', 'AI_TIMEOUT_MS', '25000'));
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },

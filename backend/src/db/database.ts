@@ -93,6 +93,44 @@ try { db.exec("ALTER TABLE jobs ADD COLUMN start_command TEXT NOT NULL DEFAULT '
 try { db.exec("ALTER TABLE jobs ADD COLUMN checkin_button TEXT NOT NULL DEFAULT '签到'"); } catch {}
 try { db.exec('ALTER TABLE job_logs ADD COLUMN detail TEXT'); } catch {}
 
+// AI supplier + model tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ai_suppliers (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    base_url   TEXT    NOT NULL,
+    api_key    TEXT    NOT NULL DEFAULT '',
+    timeout_ms INTEGER NOT NULL DEFAULT 25000
+  );
+  CREATE TABLE IF NOT EXISTS ai_models (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplier_id INTEGER NOT NULL REFERENCES ai_suppliers(id) ON DELETE CASCADE,
+    model_id    TEXT    NOT NULL,
+    label       TEXT
+  );
+`);
+
+// Seed first supplier from legacy flat settings on first run
+try {
+  const supplierCount = (db.prepare('SELECT COUNT(*) AS n FROM ai_suppliers').get() as { n: number }).n;
+  if (supplierCount === 0) {
+    const getSetting = (key: string) =>
+      (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value ?? '';
+    const apiKey  = getSetting('ai_api_key');
+    const baseUrl = getSetting('ai_base_url');
+    const model   = getSetting('ai_model');
+    const timeout = getSetting('ai_timeout_ms');
+    if (apiKey || baseUrl) {
+      const { lastInsertRowid } = db.prepare(
+        'INSERT INTO ai_suppliers (name, base_url, api_key, timeout_ms) VALUES (?, ?, ?, ?)'
+      ).run('OpenRouter', baseUrl || 'https://openrouter.ai/api/v1', apiKey, Number(timeout) || 25000);
+      if (model) {
+        db.prepare('INSERT INTO ai_models (supplier_id, model_id) VALUES (?, ?)').run(lastInsertRowid, model);
+      }
+    }
+  }
+} catch (e) { console.error('[db] AI supplier seed failed:', e); }
+
 // Make account_id nullable so embywatch jobs don't require a Telegram account
 try {
   const cols = db.prepare('PRAGMA table_info(jobs)').all() as Array<{ name: string; notnull: number }>;

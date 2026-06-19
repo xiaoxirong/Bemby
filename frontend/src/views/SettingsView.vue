@@ -132,70 +132,134 @@
       <div class="card">
         <div class="card-body">
           <div class="card-section-title">{{ t("settings.aiSection") }}</div>
-          <p style="font-size: 12px; color: #888; margin: 0 0 4px">
+          <p style="font-size: 12px; color: #888; margin: 0 0 16px">
             {{ t("settings.aiHint") }}
           </p>
-          <p style="font-size: 12px; color: #888; margin: 0 0 12px">
-            {{ t("settings.aiProviderLabel") }}
-            <a
-              href="https://openrouter.ai/settings/keys"
-              target="_blank"
-              rel="noopener noreferrer"
-              style="color: inherit; text-decoration: underline"
-              >OpenRouter</a
-            >
-            {{ t("settings.aiProviderSuffix") }}
-          </p>
 
-          <div v-if="aiMsg" class="success-msg">{{ aiMsg }}</div>
-          <div v-if="aiError" class="error-msg">{{ aiError }}</div>
-
-          <div class="form-group">
-            <label class="form-label">{{ t("settings.labelAiBaseUrl") }}</label>
-            <input
-              v-model.trim="form.ai_base_url"
-              class="form-input"
-              placeholder="https://openrouter.ai/api/v1"
-            />
+          <!-- Providers list -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div class="card-section-title" style="margin:0">{{ t("settings.aiProvidersSection") }}</div>
+            <button class="btn btn-ghost btn-sm" @click="showAddSupplier = true">
+              <i class="fa-solid fa-plus"></i> {{ t("settings.addProvider") }}
+            </button>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">{{ t("settings.labelAiApiKey") }}</label>
-            <input
-              v-model.trim="form.ai_api_key"
-              class="form-input"
-              type="password"
-              autocomplete="off"
-              placeholder="sk-..."
-            />
+          <div v-if="aiSuppliersLoading" style="color:#888;font-size:13px">{{ t("common.loading") }}</div>
+          <div v-else-if="!suppliers.length" style="color:#aaa;font-size:13px;margin-bottom:12px">{{ t("settings.noSuppliers") }}</div>
+
+          <div v-for="s in suppliers" :key="s.id" class="supplier-card">
+            <!-- Supplier header -->
+            <div v-if="editingSupplierId !== s.id" class="supplier-header">
+              <div class="supplier-info">
+                <span class="supplier-name">{{ s.name }}</span>
+                <span class="supplier-url">{{ s.base_url }}</span>
+                <span class="supplier-timeout">{{ s.timeout_ms }}ms</span>
+              </div>
+              <div class="supplier-actions">
+                <button class="btn btn-ghost btn-sm" @click="startEditSupplier(s)">{{ t("settings.editSupplier") }}</button>
+                <button class="btn btn-ghost btn-sm btn-danger" @click="removeSupplier(s.id)"><i class="fa-solid fa-trash"></i></button>
+              </div>
+            </div>
+
+            <!-- Supplier edit form -->
+            <div v-else class="supplier-edit-form">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">{{ t("settings.supplierName") }}</label>
+                  <input v-model.trim="editForm.name" class="form-input" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">{{ t("settings.supplierTimeout") }}</label>
+                  <input v-model.number="editForm.timeout_ms" class="form-input" type="number" min="1000" step="1000" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">{{ t("settings.supplierBaseUrl") }}</label>
+                <input v-model.trim="editForm.base_url" class="form-input" placeholder="https://openrouter.ai/api/v1" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">{{ t("settings.supplierApiKey") }}</label>
+                <input v-model.trim="editForm.api_key" class="form-input" type="password" autocomplete="off" placeholder="sk-..." />
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-primary btn-sm" :disabled="supplierSaving" @click="saveEditSupplier(s.id)">
+                  {{ supplierSaving ? t("common.saving") : t("settings.saveSupplier") }}
+                </button>
+                <button class="btn btn-ghost btn-sm" @click="editingSupplierId = null">{{ t("settings.cancelEdit") }}</button>
+              </div>
+            </div>
+
+            <!-- Models -->
+            <div class="supplier-models">
+              <div class="supplier-models-label">{{ t("settings.supplierModels") }}</div>
+              <div class="supplier-model-chips">
+                <span v-for="m in s.models" :key="m.id" class="model-chip">
+                  {{ m.model_id }}
+                  <button class="model-chip-del" @click="removeModel(s.id, m.id)"><i class="fa-solid fa-xmark"></i></button>
+                </span>
+                <span v-if="!s.models.length" style="color:#aaa;font-size:12px">—</span>
+              </div>
+              <div class="model-add-row">
+                <input
+                  v-model.trim="newModelInputs[s.id]"
+                  class="form-input form-input-sm"
+                  :placeholder="t('settings.modelId')"
+                  @keyup.enter="addModel(s.id)"
+                />
+                <button class="btn btn-ghost btn-sm" :disabled="!newModelInputs[s.id]" @click="addModel(s.id)">
+                  <i class="fa-solid fa-plus"></i> {{ t("settings.addModel") }}
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">{{ t("settings.labelAiModel") }}</label>
-              <input
-                v-model.trim="form.ai_model"
-                class="form-input"
-                placeholder="nvidia/nemotron-nano-12b-v2-vl:free"
-              />
+          <!-- Add supplier form -->
+          <div v-if="showAddSupplier" class="supplier-card supplier-edit-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">{{ t("settings.supplierName") }}</label>
+                <input v-model.trim="newSupplierForm.name" class="form-input" placeholder="OpenRouter" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">{{ t("settings.supplierTimeout") }}</label>
+                <input v-model.number="newSupplierForm.timeout_ms" class="form-input" type="number" min="1000" step="1000" />
+              </div>
             </div>
             <div class="form-group">
-              <label class="form-label">{{
-                t("settings.labelAiTimeout")
-              }}</label>
-              <input
-                v-model.number="form.ai_timeout_ms"
-                class="form-input"
-                type="number"
-                min="1000"
-                step="1000"
-              />
+              <label class="form-label">{{ t("settings.supplierBaseUrl") }}</label>
+              <input v-model.trim="newSupplierForm.base_url" class="form-input" placeholder="https://openrouter.ai/api/v1" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t("settings.supplierApiKey") }}</label>
+              <input v-model.trim="newSupplierForm.api_key" class="form-input" type="password" autocomplete="off" placeholder="sk-..." />
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary btn-sm" :disabled="supplierSaving || !newSupplierForm.name || !newSupplierForm.base_url" @click="createSupplier">
+                {{ supplierSaving ? t("common.saving") : t("settings.saveSupplier") }}
+              </button>
+              <button class="btn btn-ghost btn-sm" @click="showAddSupplier = false">{{ t("settings.cancelEdit") }}</button>
             </div>
           </div>
 
-          <button class="btn btn-primary" :disabled="aiSaving" @click="saveAi">
-            <i class="fa-solid fa-floppy-disk"></i> {{ aiSaving ? t("common.saving") : t("settings.saveBtn") }}
-          </button>
+          <div v-if="supplierError" class="error-msg" style="margin-top:8px">{{ supplierError }}</div>
+
+          <!-- Default model -->
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid #e5e7eb">
+            <div class="form-group">
+              <label class="form-label">{{ t("settings.defaultModel") }}</label>
+              <select v-model="form.ai_model" class="form-select">
+                <option value="">{{ t("settings.defaultModelNone") }}</option>
+                <optgroup v-for="s in suppliers" :key="s.id" :label="s.name">
+                  <option v-for="m in s.models" :key="m.id" :value="m.model_id">{{ m.model_id }}</option>
+                </optgroup>
+              </select>
+            </div>
+            <div v-if="aiMsg" class="success-msg">{{ aiMsg }}</div>
+            <div v-if="aiError" class="error-msg">{{ aiError }}</div>
+            <button class="btn btn-primary" :disabled="aiSaving" @click="saveAi">
+              <i class="fa-solid fa-floppy-disk"></i> {{ aiSaving ? t("common.saving") : t("settings.saveDefaultModel") }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -396,8 +460,8 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from "vue";
-import { settingsApi, authApi, dataApi } from "../api/client";
-import type { ExportPayload, UAPreset } from "../api/client";
+import { settingsApi, authApi, dataApi, aiSuppliersApi } from "../api/client";
+import type { ExportPayload, UAPreset, AiSupplier } from "../api/client";
 import { t } from "../i18n";
 
 const timezones = [
@@ -426,10 +490,7 @@ const form = reactive({
   default_ua: "",
   default_play_duration: 300,
   default_device_name: "Mac",
-  ai_base_url: "",
-  ai_api_key: "",
   ai_model: "",
-  ai_timeout_ms: 25000,
 });
 const saving = ref(false);
 const saveMsg = ref("");
@@ -442,6 +503,16 @@ const embyError = ref("");
 const aiSaving = ref(false);
 const aiMsg = ref("");
 const aiError = ref("");
+
+const suppliers = ref<AiSupplier[]>([]);
+const aiSuppliersLoading = ref(false);
+const editingSupplierId = ref<number | null>(null);
+const editForm = reactive({ name: '', base_url: '', api_key: '', timeout_ms: 25000 });
+const newSupplierForm = reactive({ name: '', base_url: '', api_key: '', timeout_ms: 25000 });
+const showAddSupplier = ref(false);
+const supplierSaving = ref(false);
+const supplierError = ref('');
+const newModelInputs = ref<Record<number, string>>({});
 
 const notifyForm = reactive({ username: "", events: ["failed"] as string[] });
 const notifySaving = ref(false);
@@ -478,10 +549,7 @@ onMounted(async () => {
     try { uaPresets.value = JSON.parse(s.ua_presets ?? "[]"); } catch { uaPresets.value = []; }
     form.default_play_duration = Number(s.default_play_duration ?? 300);
     form.default_device_name = s.default_device_name ?? "Mac";
-    form.ai_base_url = s.ai_base_url ?? "";
-    form.ai_api_key = s.ai_api_key ?? "";
     form.ai_model = s.ai_model ?? "";
-    form.ai_timeout_ms = Number(s.ai_timeout_ms ?? 25000);
     notifyForm.username = s.notify_tg_username ?? "";
     try {
       if (s.notify_tg_events)
@@ -491,6 +559,14 @@ onMounted(async () => {
     }
   } catch {
     /* ignore */
+  }
+  try {
+    aiSuppliersLoading.value = true;
+    suppliers.value = await aiSuppliersApi.list();
+  } catch {
+    /* ignore */
+  } finally {
+    aiSuppliersLoading.value = false;
   }
 });
 
@@ -551,17 +627,89 @@ async function saveAi() {
   aiError.value = "";
   aiSaving.value = true;
   try {
-    await settingsApi.update({
-      ai_base_url: form.ai_base_url,
-      ai_api_key: form.ai_api_key,
-      ai_model: form.ai_model,
-      ai_timeout_ms: String(form.ai_timeout_ms),
-    });
+    await settingsApi.update({ ai_model: form.ai_model });
     aiMsg.value = t("settings.saved");
   } catch (err: any) {
     aiError.value = err.response?.data?.error ?? t("settings.saveFailed");
   } finally {
     aiSaving.value = false;
+  }
+}
+
+async function reloadSuppliers() {
+  suppliers.value = await aiSuppliersApi.list();
+}
+
+function startEditSupplier(s: AiSupplier) {
+  editingSupplierId.value = s.id;
+  editForm.name = s.name;
+  editForm.base_url = s.base_url;
+  editForm.api_key = s.api_key;
+  editForm.timeout_ms = s.timeout_ms;
+}
+
+async function saveEditSupplier(id: number) {
+  supplierError.value = '';
+  supplierSaving.value = true;
+  try {
+    await aiSuppliersApi.update(id, { ...editForm });
+    editingSupplierId.value = null;
+    await reloadSuppliers();
+  } catch (err: any) {
+    supplierError.value = err.response?.data?.error ?? t("settings.saveFailed");
+  } finally {
+    supplierSaving.value = false;
+  }
+}
+
+async function createSupplier() {
+  supplierError.value = '';
+  supplierSaving.value = true;
+  try {
+    await aiSuppliersApi.create({ ...newSupplierForm });
+    showAddSupplier.value = false;
+    newSupplierForm.name = '';
+    newSupplierForm.base_url = '';
+    newSupplierForm.api_key = '';
+    newSupplierForm.timeout_ms = 25000;
+    await reloadSuppliers();
+  } catch (err: any) {
+    supplierError.value = err.response?.data?.error ?? t("settings.saveFailed");
+  } finally {
+    supplierSaving.value = false;
+  }
+}
+
+async function removeSupplier(id: number) {
+  supplierError.value = '';
+  try {
+    await aiSuppliersApi.remove(id);
+    await reloadSuppliers();
+  } catch (err: any) {
+    supplierError.value = err.response?.data?.error ?? t("settings.saveFailed");
+  }
+}
+
+async function addModel(supplierId: number) {
+  const modelId = newModelInputs.value[supplierId]?.trim();
+  if (!modelId) return;
+  supplierError.value = '';
+  try {
+    await aiSuppliersApi.addModel(supplierId, modelId);
+    newModelInputs.value[supplierId] = '';
+    await reloadSuppliers();
+  } catch (err: any) {
+    supplierError.value = err.response?.data?.error ?? t("settings.saveFailed");
+  }
+}
+
+async function removeModel(supplierId: number, modelId: number) {
+  supplierError.value = '';
+  try {
+    await aiSuppliersApi.removeModel(supplierId, modelId);
+    await reloadSuppliers();
+  } catch (err: any) {
+    supplierError.value = err.response?.data?.error ?? t("settings.saveFailed");
   }
 }
 
@@ -795,4 +943,101 @@ async function saveCredentials() {
   margin-top: 8px;
   flex-wrap: wrap;
 }
+
+/* AI supplier cards */
+.supplier-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  background: #fafafa;
+}
+.supplier-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.supplier-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.supplier-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.supplier-url {
+  font-size: 12px;
+  color: #6b7280;
+  font-family: monospace;
+  word-break: break-all;
+}
+.supplier-timeout {
+  font-size: 11px;
+  color: #9ca3af;
+}
+.supplier-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.supplier-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.supplier-models {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e5e7eb;
+}
+.supplier-models-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+.supplier-model-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-family: monospace;
+}
+.model-chip-del {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: #9ca3af;
+  font-size: 11px;
+  line-height: 1;
+}
+.model-chip-del:hover { color: #ef4444; }
+.model-add-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.form-input-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+  height: auto;
+}
+.btn-danger { color: #ef4444; }
+.btn-danger:hover { color: #dc2626; }
 </style>
