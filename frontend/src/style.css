@@ -403,6 +403,14 @@ tr:hover td {
 	background-position: right 10px center;
 }
 
+/* Prevent iOS Safari from auto-zooming on focus (triggers when font-size < 16px) */
+@media (hover: none) and (pointer: coarse) {
+	.form-input,
+	.form-select {
+		font-size: 16px;
+	}
+}
+
 .form-input:focus,
 .form-select:focus {
 	border-color: #4361ee;
