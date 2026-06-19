@@ -119,21 +119,42 @@
                                 <template v-if="a.errorName"><span class="dev-t-key">{{ t('logs.dev.errorName') }}</span><span class="dev-t-val dev-t-error">{{ a.errorName }}</span></template>
                               </div>
                             </div>
-                          </template>
-                          <template v-if="showDevLogs && a.aiPrompt != null">
-                            <div class="dev-block">
-                              <div class="dev-block-label">{{ t('logs.aiPrompt') }}</div>
-                              <img v-for="(src, i) in (a.commandResponseImages ?? [])" :key="i" :src="src" class="dev-block-img" alt="image sent to AI" />
-                              <pre class="dev-block-pre">{{ a.aiPrompt }}</pre>
-                            </div>
-                            <div class="dev-block">
-                              <div class="dev-block-label">{{ t('logs.aiResponse') }}{{ a.aiDurationMs != null ? ` (${(a.aiDurationMs / 1000).toFixed(1)}s)` : '' }}</div>
-                              <pre class="dev-block-pre">{{ a.aiResponse }}</pre>
-                            </div>
-                            <div v-if="a.aiRetries?.length" class="dev-block" style="margin-top:4px">
-                              <div class="dev-block-label">{{ t('logs.aiRetries') }} ({{ a.aiRetries.length }})</div>
-                              <pre class="dev-block-pre">{{ a.aiRetries.map((r, i) => `#${i+1}: ${r}`).join('\n') }}</pre>
-                            </div>
+                            <template v-if="a.aiPrompt != null">
+                              <div class="dev-block">
+                                <div class="dev-block-label" style="display:flex;align-items:center;justify-content:space-between">
+                                  <span>{{ t('logs.aiPrompt') }}</span>
+                                  <button class="btn btn-ghost btn-sm btn-icon debug-open-btn" :class="{ 'debug-open-btn-active': debugKey === `${expandedId}-attempt-${a.attempt}` }" :title="t('logs.debug.open')" @click="openDebugCheckin(a)"><i class="fa-solid fa-flask"></i></button>
+                                </div>
+                                <img v-for="(src, i) in (a.commandResponseImages ?? [])" :key="i" :src="src" class="dev-block-img" alt="image sent to AI" />
+                                <pre class="dev-block-pre">{{ a.aiPrompt }}</pre>
+                              </div>
+                              <div class="dev-block">
+                                <div class="dev-block-label">{{ t('logs.aiResponse') }}{{ a.aiDurationMs != null ? ` (${(a.aiDurationMs / 1000).toFixed(1)}s)` : '' }}</div>
+                                <pre class="dev-block-pre">{{ a.aiResponse }}</pre>
+                              </div>
+                              <div v-if="a.aiRetries?.length" class="dev-block" style="margin-top:4px">
+                                <div class="dev-block-label">{{ t('logs.aiRetries') }} ({{ a.aiRetries.length }})</div>
+                                <pre class="dev-block-pre">{{ a.aiRetries.map((r, i) => `#${i+1}: ${r}`).join('\n') }}</pre>
+                              </div>
+                              <div v-if="debugKey === `${expandedId}-attempt-${a.attempt}`" class="debug-panel">
+                                <div class="debug-panel-title">{{ t('logs.debug.title') }}</div>
+                                <img v-for="(src, i) in (a.commandResponseImages ?? [])" :key="i" :src="src" class="debug-panel-img" alt="" />
+                                <textarea v-model="debugPrompt" class="debug-panel-textarea" rows="5" :placeholder="t('logs.debug.promptPlaceholder')" />
+                                <div class="debug-panel-controls">
+                                  <span class="debug-tokens-label">{{ t('logs.debug.model') }}</span>
+                                  <input v-model="debugModel" class="form-input debug-model-input" type="text" :placeholder="t('logs.debug.model')" />
+                                  <span class="debug-tokens-label">{{ t('logs.debug.maxTokens') }}</span>
+                                  <input v-model.number="debugMaxTokens" class="form-input debug-tokens-input" type="number" min="10" max="100000" step="100" />
+                                  <button class="btn btn-primary btn-sm" :disabled="debugRunning" @click="runDebug">{{ debugRunning ? t('logs.debug.running') : t('logs.debug.run') }}</button>
+                                  <button class="btn btn-ghost btn-sm" @click="debugKey = null">{{ t('logs.debug.close') }}</button>
+                                </div>
+                                <div v-if="debugResponse != null" class="debug-panel-response">
+                                  <div class="dev-block-label">{{ t('logs.debug.response') }}{{ debugDurationMs != null ? ` (${(debugDurationMs / 1000).toFixed(1)}s)` : '' }}</div>
+                                  <pre class="dev-block-pre">{{ debugResponse }}</pre>
+                                </div>
+                                <div v-if="debugError" class="chat-error" style="margin-top:6px">{{ debugError }}</div>
+                              </div>
+                            </template>
                           </template>
                           <div v-if="a.buttonResponseHtml || a.buttonResponseHasMedia" class="chat-row-recv">
                             <div>
@@ -354,6 +375,18 @@ function openDebug(step: CustomStepLog) {
   debugKey.value = key;
   debugPrompt.value = step.aiPrompt ?? '';
   debugImages.value = step.preClickImage ? [step.preClickImage] : [];
+  debugMaxTokens.value = 5000;
+  debugResponse.value = null;
+  debugError.value = null;
+  debugDurationMs.value = null;
+}
+
+function openDebugCheckin(attempt: CheckinAttemptLog) {
+  const key = `${expandedId.value}-attempt-${attempt.attempt}`;
+  if (debugKey.value === key) { debugKey.value = null; return; }
+  debugKey.value = key;
+  debugPrompt.value = attempt.aiPrompt ?? '';
+  debugImages.value = attempt.commandResponseImages ?? [];
   debugMaxTokens.value = 5000;
   debugResponse.value = null;
   debugError.value = null;
