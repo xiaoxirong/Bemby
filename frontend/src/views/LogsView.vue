@@ -1,17 +1,28 @@
 <template>
   <div>
     <div class="page-header">
-      <h2 class="page-title">{{ t('logs.title') }}</h2>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <select v-model="filterJobId" class="form-select" style="width:200px" @change="load">
-          <option value="">{{ t('logs.allJobs') }}</option>
-          <option v-for="j in jobs" :key="j.id" :value="j.id">{{ j.name }}</option>
+      <h2 class="page-title">{{ t("logs.title") }}</h2>
+      <div
+        style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap"
+      >
+        <select
+          v-model="filterJobId"
+          class="form-select"
+          style="width: 200px"
+          @change="load"
+        >
+          <option value="">{{ t("logs.allJobs") }}</option>
+          <option v-for="j in jobs" :key="j.id" :value="j.id">
+            {{ j.name }}
+          </option>
         </select>
         <label class="dev-toggle" :title="t('logs.showDevLogs')">
           <input type="checkbox" v-model="showDevLogs" />
-          <span class="dev-toggle-label">{{ t('logs.devLogsLabel') }}</span>
+          <span class="dev-toggle-label">{{ t("logs.devLogsLabel") }}</span>
         </label>
-        <button class="btn btn-ghost" @click="load"><i class="fa-solid fa-rotate"></i> {{ t('common.refresh') }}</button>
+        <button class="btn btn-ghost" @click="load">
+          <i class="fa-solid fa-rotate"></i> {{ t("common.refresh") }}
+        </button>
       </div>
     </div>
 
@@ -20,166 +31,485 @@
         <table>
           <thead>
             <tr>
-              <th>{{ t('logs.colTime') }}</th>
-              <th>{{ t('logs.colJob') }}</th>
-              <th class="col-hide-mobile">{{ t('logs.colAccount') }}</th>
-              <th>{{ t('logs.colStatus') }}</th>
-              <th>{{ t('logs.colMessage') }}</th>
+              <th>{{ t("logs.colTime") }}</th>
+              <th>{{ t("logs.colJob") }}</th>
+              <th class="col-hide-mobile">{{ t("logs.colAccount") }}</th>
+              <th>{{ t("logs.colStatus") }}</th>
+              <th>{{ t("logs.colMessage") }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!logs.length">
-              <td colspan="5" class="empty">{{ t('logs.noLogs') }}</td>
+              <td colspan="5" class="empty">{{ t("logs.noLogs") }}</td>
             </tr>
             <template v-for="l in logs" :key="l.id">
               <tr
-                style="cursor:pointer;user-select:none"
+                style="cursor: pointer; user-select: none"
                 :class="expandedId === l.id ? 'row-expanded' : ''"
                 @click="toggleDetail(l)"
               >
                 <td class="time-cell">
                   <span class="hide-mobile">{{ fmtDate(l.ranAt) }}</span>
-                  <span class="show-mobile" style="display:none">{{ fmtDateShort(l.ranAt) }}</span>
+                  <span class="show-mobile" style="display: none">{{
+                    fmtDateShort(l.ranAt)
+                  }}</span>
                 </td>
                 <td>
                   {{ l.jobName ?? l.jobId }}
-                  <span style="margin-left:4px;font-size:11px;color:#aaa">▾</span>
+                  <span style="margin-left: 4px; font-size: 11px; color: #aaa"
+                    >▾</span
+                  >
                 </td>
-                <td class="col-hide-mobile">{{ l.accountName ?? '—' }}</td>
-                <td><span :class="statusBadge(l.status)">{{ t(`logs.status.${l.status}`) }}</span></td>
+                <td class="col-hide-mobile">{{ l.accountName ?? "—" }}</td>
+                <td>
+                  <span :class="statusBadge(l.status)">{{
+                    t(`logs.status.${l.status}`)
+                  }}</span>
+                </td>
                 <td class="msg-cell">
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">{{ l.message ?? '—' }}</span>
+                  <div style="display: flex; align-items: center; gap: 8px">
+                    <span
+                      style="
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                        flex: 1;
+                      "
+                      >{{ l.message ?? "—" }}</span
+                    >
                     <button
                       v-if="l.status === 'running'"
                       class="btn btn-sm btn-danger"
-                      style="flex-shrink:0"
+                      style="flex-shrink: 0"
                       :disabled="stopping.has(l.id)"
                       @click.stop="stopJob(l)"
-                    ><i class="fa-solid fa-stop"></i> {{ stopping.has(l.id) ? t('common.stopping') : t('common.stop') }}</button>
+                    >
+                      <i class="fa-solid fa-stop"></i>
+                      {{
+                        stopping.has(l.id)
+                          ? t("common.stopping")
+                          : t("common.stop")
+                      }}
+                    </button>
                   </div>
                 </td>
               </tr>
 
               <!-- Detail panel — checkin jobs: chat-style attempt log -->
               <tr v-if="l.jobType === 'checkin' && expandedId === l.id">
-                <td colspan="5" style="padding:0;background:#f8f9fa;border-top:none">
+                <td
+                  colspan="5"
+                  style="padding: 0; background: #f8f9fa; border-top: none"
+                >
                   <div class="detail-panel">
-                    <div v-if="detailLoading" style="color:#888;font-size:13px">
-                      {{ t('logs.detail.loading') }}
+                    <div
+                      v-if="detailLoading"
+                      style="color: #888; font-size: 13px"
+                    >
+                      {{ t("logs.detail.loading") }}
                     </div>
-                    <div v-else-if="!checkinDetail?.length" style="color:#888;font-size:13px">
-                      {{ t('logs.detail.noDetail') }}
+                    <div
+                      v-else-if="!checkinDetail?.length"
+                      style="color: #888; font-size: 13px"
+                    >
+                      {{ t("logs.detail.noDetail") }}
                     </div>
                     <div v-else>
                       <div
                         v-for="a in checkinDetail"
                         :key="a.attempt"
-                        :style="checkinDetail.length > 1 ? 'margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #e5e7eb' : ''"
+                        :style="
+                          checkinDetail.length > 1
+                            ? 'margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #e5e7eb'
+                            : ''
+                        "
                       >
-                        <div v-if="checkinDetail.length > 1" style="font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:0.05em;text-align:center;margin-bottom:10px">
-                          {{ t('logs.detail.attempt').replace('{n}', String(a.attempt)) }}
+                        <div
+                          v-if="checkinDetail.length > 1"
+                          style="
+                            font-size: 11px;
+                            font-weight: 600;
+                            color: #aaa;
+                            text-transform: uppercase;
+                            letter-spacing: 0.05em;
+                            text-align: center;
+                            margin-bottom: 10px;
+                          "
+                        >
+                          {{
+                            t("logs.detail.attempt").replace(
+                              "{n}",
+                              String(a.attempt),
+                            )
+                          }}
                         </div>
                         <div class="chat-bg">
-                        <div class="chat-log">
-                          <div class="chat-row-sent">
-                            <div class="bubble-sent">{{ a.commandSent }}</div>
-                          </div>
-                          <div v-if="a.commandResponseHtml || a.hasMedia" class="chat-row-recv">
-                            <div>
-                              <div class="tg-bubble">
-                                <template v-if="a.commandResponseImages?.length">
-                                  <img v-for="(src, i) in a.commandResponseImages" :key="i" :src="src" class="tg-bubble-img" alt="" />
-                                </template>
-                                <div v-else-if="a.hasMedia" class="tg-bubble-img-placeholder">📷</div>
-                                <div v-if="a.commandResponseHtml" class="tg-bubble-text" v-html="a.commandResponseHtml" />
-                              </div>
-                              <div v-if="a.availableButtons?.length" class="tg-keyboard">
-                                <div v-for="(row, ri) in a.availableButtons" :key="ri" class="tg-keyboard-row">
-                                  <div v-for="btn in row" :key="btn" :class="btn === a.buttonClicked ? 'tg-btn tg-btn-active' : 'tg-btn'">{{ btn }}</div>
+                          <div class="chat-log">
+                            <div class="chat-row-sent">
+                              <div class="bubble-sent">{{ a.commandSent }}</div>
+                            </div>
+                            <div
+                              v-if="a.commandResponseHtml || a.hasMedia"
+                              class="chat-row-recv"
+                            >
+                              <div>
+                                <div class="tg-bubble">
+                                  <template
+                                    v-if="a.commandResponseImages?.length"
+                                  >
+                                    <img
+                                      v-for="(
+                                        src, i
+                                      ) in a.commandResponseImages"
+                                      :key="i"
+                                      :src="src"
+                                      class="tg-bubble-img"
+                                      alt=""
+                                    />
+                                  </template>
+                                  <div
+                                    v-else-if="a.hasMedia"
+                                    class="tg-bubble-img-placeholder"
+                                  >
+                                    📷
+                                  </div>
+                                  <div
+                                    v-if="a.commandResponseHtml"
+                                    class="tg-bubble-text"
+                                    v-html="a.commandResponseHtml"
+                                  />
+                                </div>
+                                <div
+                                  v-if="a.availableButtons?.length"
+                                  class="tg-keyboard"
+                                >
+                                  <div
+                                    v-for="(row, ri) in a.availableButtons"
+                                    :key="ri"
+                                    class="tg-keyboard-row"
+                                  >
+                                    <div
+                                      v-for="btn in row"
+                                      :key="btn"
+                                      :class="
+                                        btn === a.buttonClicked
+                                          ? 'tg-btn tg-btn-active'
+                                          : 'tg-btn'
+                                      "
+                                    >
+                                      {{ btn }}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                          <div v-if="a.buttonClicked" class="chat-row-sent">
-                            <div>
-                              <div class="bubble-sent">{{ a.buttonClicked }}</div>
-                              <div v-if="a.aiDurationMs != null" class="ai-badge">AI · {{ a.aiDurationMs }}ms</div>
-                            </div>
-                          </div>
-                          <template v-if="showDevLogs">
-                            <div class="dev-block" style="margin-top:6px">
-                              <div class="dev-block-label">{{ t('logs.dev.timing') }}</div>
-                              <div class="dev-timing-grid">
-                                <template v-if="a.totalMs != null"><span class="dev-t-key">{{ t('logs.dev.totalMs') }}</span><span class="dev-t-val">{{ a.totalMs }}ms</span></template>
-                                <template v-if="a.connectMs != null"><span class="dev-t-key">{{ t('logs.dev.connectMs') }}</span><span class="dev-t-val">{{ a.connectMs }}ms</span></template>
-                                <template v-if="a.replyLatencyMs != null"><span class="dev-t-key">{{ t('logs.dev.replyLatencyMs') }}</span><span class="dev-t-val">{{ a.replyLatencyMs }}ms<span v-if="a.replyTimeoutMs != null" class="dev-t-note"> (limit: {{ a.replyTimeoutMs }}ms)</span></span></template>
-                                <template v-if="a.buttonClickMs != null"><span class="dev-t-key">{{ t('logs.dev.buttonClickMs') }}</span><span class="dev-t-val">{{ a.buttonClickMs }}ms</span></template>
-                                <template v-if="a.buttonResponseMs != null"><span class="dev-t-key">{{ t('logs.dev.buttonResponseMs') }}</span><span class="dev-t-val">{{ a.buttonResponseMs }}ms<span v-if="a.buttonResponseSource" class="dev-t-note"> · {{ a.buttonResponseSource }}</span></span></template>
-                                <template v-if="a.errorName"><span class="dev-t-key">{{ t('logs.dev.errorName') }}</span><span class="dev-t-val dev-t-error">{{ a.errorName }}</span></template>
+                            <div v-if="a.buttonClicked" class="chat-row-sent">
+                              <div>
+                                <div class="bubble-sent">
+                                  {{ a.buttonClicked }}
+                                </div>
+                                <div
+                                  v-if="a.aiDurationMs != null"
+                                  class="ai-badge"
+                                >
+                                  AI · {{ a.aiDurationMs }}ms
+                                </div>
                               </div>
                             </div>
-                            <template v-if="a.aiPrompt != null">
-                              <div class="dev-block">
-                                <div class="dev-block-label" style="display:flex;align-items:center;justify-content:space-between">
-                                  <span>{{ t('logs.aiPrompt') }}</span>
-                                  <button class="btn btn-ghost btn-sm btn-icon debug-open-btn" :class="{ 'debug-open-btn-active': debugKey === `${expandedId}-attempt-${a.attempt}` }" :title="t('logs.debug.open')" @click="openDebugCheckin(a)"><i class="fa-solid fa-flask"></i></button>
+                            <template v-if="showDevLogs">
+                              <div class="dev-block" style="margin-top: 6px">
+                                <div class="dev-block-label">
+                                  {{ t("logs.dev.timing") }}
                                 </div>
-                                <img v-for="(src, i) in (a.commandResponseImages ?? [])" :key="i" :src="src" class="dev-block-img" alt="image sent to AI" />
-                                <pre class="dev-block-pre">{{ a.aiPrompt }}</pre>
-                              </div>
-                              <div class="dev-block">
-                                <div class="dev-block-label">{{ t('logs.aiResponse') }}{{ a.aiDurationMs != null ? ` (${(a.aiDurationMs / 1000).toFixed(1)}s)` : '' }}</div>
-                                <pre class="dev-block-pre">{{ a.aiResponse }}</pre>
-                              </div>
-                              <div v-if="a.aiRetries?.length" class="dev-block" style="margin-top:4px">
-                                <div class="dev-block-label">{{ t('logs.aiRetries') }} ({{ a.aiRetries.length }})</div>
-                                <pre class="dev-block-pre">{{ a.aiRetries.map((r, i) => `#${i+1}: ${r}`).join('\n') }}</pre>
-                              </div>
-                              <div v-if="debugKey === `${expandedId}-attempt-${a.attempt}`" class="debug-panel">
-                                <div class="debug-panel-title">{{ t('logs.debug.title') }}</div>
-                                <img v-for="(src, i) in (a.commandResponseImages ?? [])" :key="i" :src="src" class="debug-panel-img" alt="" />
-                                <textarea v-model="debugPrompt" class="debug-panel-textarea" rows="5" :placeholder="t('logs.debug.promptPlaceholder')" />
-                                <div class="debug-panel-controls">
-                                  <span class="debug-tokens-label">{{ t('logs.debug.model') }}</span>
-                                  <select v-model="debugModel" class="form-select debug-model-input">
-                                  <option value="">{{ t('logs.debug.modelDefault') }}</option>
-                                  <optgroup v-for="sup in debugSuppliers" :key="sup.id" :label="sup.name">
-                                    <option v-for="m in sup.models" :key="m.id" :value="m.model_id">{{ m.model_id }}</option>
-                                  </optgroup>
-                                </select>
-                                  <span class="debug-tokens-label">{{ t('logs.debug.maxTokens') }}</span>
-                                  <input v-model.number="debugMaxTokens" class="form-input debug-tokens-input" type="number" min="10" max="100000" step="100" />
-                                  <button class="btn btn-primary btn-sm" :disabled="debugRunning" @click="runDebug">{{ debugRunning ? t('logs.debug.running') : t('logs.debug.run') }}</button>
-                                  <button class="btn btn-ghost btn-sm" @click="debugKey = null">{{ t('logs.debug.close') }}</button>
+                                <div class="dev-timing-grid">
+                                  <template v-if="a.totalMs != null"
+                                    ><span class="dev-t-key">{{
+                                      t("logs.dev.totalMs")
+                                    }}</span
+                                    ><span class="dev-t-val"
+                                      >{{ a.totalMs }}ms</span
+                                    ></template
+                                  >
+                                  <template v-if="a.connectMs != null"
+                                    ><span class="dev-t-key">{{
+                                      t("logs.dev.connectMs")
+                                    }}</span
+                                    ><span class="dev-t-val"
+                                      >{{ a.connectMs }}ms</span
+                                    ></template
+                                  >
+                                  <template v-if="a.replyLatencyMs != null"
+                                    ><span class="dev-t-key">{{
+                                      t("logs.dev.replyLatencyMs")
+                                    }}</span
+                                    ><span class="dev-t-val"
+                                      >{{ a.replyLatencyMs }}ms<span
+                                        v-if="a.replyTimeoutMs != null"
+                                        class="dev-t-note"
+                                      >
+                                        (limit: {{ a.replyTimeoutMs }}ms)</span
+                                      ></span
+                                    ></template
+                                  >
+                                  <template v-if="a.buttonClickMs != null"
+                                    ><span class="dev-t-key">{{
+                                      t("logs.dev.buttonClickMs")
+                                    }}</span
+                                    ><span class="dev-t-val"
+                                      >{{ a.buttonClickMs }}ms</span
+                                    ></template
+                                  >
+                                  <template v-if="a.buttonResponseMs != null"
+                                    ><span class="dev-t-key">{{
+                                      t("logs.dev.buttonResponseMs")
+                                    }}</span
+                                    ><span class="dev-t-val"
+                                      >{{ a.buttonResponseMs }}ms<span
+                                        v-if="a.buttonResponseSource"
+                                        class="dev-t-note"
+                                      >
+                                        · {{ a.buttonResponseSource }}</span
+                                      ></span
+                                    ></template
+                                  >
+                                  <template v-if="a.errorName"
+                                    ><span class="dev-t-key">{{
+                                      t("logs.dev.errorName")
+                                    }}</span
+                                    ><span class="dev-t-val dev-t-error">{{
+                                      a.errorName
+                                    }}</span></template
+                                  >
                                 </div>
-                                <div v-if="debugResponse != null" class="debug-panel-response">
-                                  <div class="dev-block-label">{{ t('logs.debug.response') }}{{ debugDurationMs != null ? ` (${(debugDurationMs / 1000).toFixed(1)}s)` : '' }}</div>
-                                  <pre class="dev-block-pre">{{ debugResponse }}</pre>
-                                </div>
-                                <div v-if="debugError" class="chat-error" style="margin-top:6px">{{ debugError }}</div>
                               </div>
+                              <template v-if="a.aiPrompt != null">
+                                <div class="dev-block">
+                                  <div
+                                    class="dev-block-label"
+                                    style="
+                                      display: flex;
+                                      align-items: center;
+                                      justify-content: space-between;
+                                    "
+                                  >
+                                    <span>{{ t("logs.aiPrompt") }}</span>
+                                    <button
+                                      class="btn btn-ghost btn-sm btn-icon debug-open-btn"
+                                      :class="{
+                                        'debug-open-btn-active':
+                                          debugKey ===
+                                          `${expandedId}-attempt-${a.attempt}`,
+                                      }"
+                                      :title="t('logs.debug.open')"
+                                      @click="openDebugCheckin(a)"
+                                    >
+                                      <i class="fa-solid fa-flask"></i>
+                                    </button>
+                                  </div>
+                                  <img
+                                    v-for="(
+                                      src, i
+                                    ) in a.commandResponseImages ?? []"
+                                    :key="i"
+                                    :src="src"
+                                    class="dev-block-img"
+                                    alt="image sent to AI"
+                                  />
+                                  <pre class="dev-block-pre">{{
+                                    a.aiPrompt
+                                  }}</pre>
+                                </div>
+                                <div class="dev-block">
+                                  <div class="dev-block-label">
+                                    {{ t("logs.aiResponse")
+                                    }}{{
+                                      a.aiDurationMs != null
+                                        ? ` (${(a.aiDurationMs / 1000).toFixed(1)}s)`
+                                        : ""
+                                    }}
+                                  </div>
+                                  <pre class="dev-block-pre">{{
+                                    a.aiResponse
+                                  }}</pre>
+                                </div>
+                                <div
+                                  v-if="a.aiRetries?.length"
+                                  class="dev-block"
+                                  style="margin-top: 4px"
+                                >
+                                  <div class="dev-block-label">
+                                    {{ t("logs.aiRetries") }} ({{
+                                      a.aiRetries.length
+                                    }})
+                                  </div>
+                                  <pre class="dev-block-pre">{{
+                                    a.aiRetries
+                                      .map((r, i) => `#${i + 1}: ${r}`)
+                                      .join("\n")
+                                  }}</pre>
+                                </div>
+                                <div
+                                  v-if="
+                                    debugKey ===
+                                    `${expandedId}-attempt-${a.attempt}`
+                                  "
+                                  class="debug-panel"
+                                >
+                                  <div class="debug-panel-title">
+                                    {{ t("logs.debug.title") }}
+                                  </div>
+                                  <img
+                                    v-for="(
+                                      src, i
+                                    ) in a.commandResponseImages ?? []"
+                                    :key="i"
+                                    :src="src"
+                                    class="debug-panel-img"
+                                    alt=""
+                                  />
+                                  <textarea
+                                    v-model="debugPrompt"
+                                    class="debug-panel-textarea"
+                                    rows="5"
+                                    :placeholder="
+                                      t('logs.debug.promptPlaceholder')
+                                    "
+                                  />
+                                  <div class="debug-panel-controls">
+                                    <span class="debug-tokens-label">{{
+                                      t("logs.debug.model")
+                                    }}</span>
+                                    <select
+                                      v-model="debugModel"
+                                      class="form-select debug-model-input"
+                                    >
+                                      <option value="">
+                                        {{ t("logs.debug.modelDefault") }}
+                                      </option>
+                                      <optgroup
+                                        v-for="sup in debugSuppliers"
+                                        :key="sup.id"
+                                        :label="sup.name"
+                                      >
+                                        <option
+                                          v-for="m in sup.models"
+                                          :key="m.id"
+                                          :value="m.model_id"
+                                        >
+                                          {{ m.model_id }}
+                                        </option>
+                                      </optgroup>
+                                    </select>
+                                    <span class="debug-tokens-label">{{
+                                      t("logs.debug.maxTokens")
+                                    }}</span>
+                                    <input
+                                      v-model.number="debugMaxTokens"
+                                      class="form-input debug-tokens-input"
+                                      type="number"
+                                      min="10"
+                                      max="100000"
+                                      step="100"
+                                    />
+                                    <button
+                                      class="btn btn-primary btn-sm"
+                                      :disabled="debugRunning"
+                                      @click="runDebug"
+                                    >
+                                      {{
+                                        debugRunning
+                                          ? t("logs.debug.running")
+                                          : t("logs.debug.run")
+                                      }}
+                                    </button>
+                                    <button
+                                      class="btn btn-ghost btn-sm"
+                                      @click="debugKey = null"
+                                    >
+                                      {{ t("logs.debug.close") }}
+                                    </button>
+                                  </div>
+                                  <div
+                                    v-if="debugResponse != null"
+                                    class="debug-panel-response"
+                                  >
+                                    <div class="dev-block-label">
+                                      {{ t("logs.debug.response")
+                                      }}{{
+                                        debugDurationMs != null
+                                          ? ` (${(debugDurationMs / 1000).toFixed(1)}s)`
+                                          : ""
+                                      }}
+                                    </div>
+                                    <pre class="dev-block-pre">{{
+                                      debugResponse
+                                    }}</pre>
+                                  </div>
+                                  <div
+                                    v-if="debugError"
+                                    class="chat-error"
+                                    style="margin-top: 6px"
+                                  >
+                                    {{ debugError }}
+                                  </div>
+                                </div>
+                              </template>
                             </template>
-                          </template>
-                          <div v-if="a.buttonResponseHtml || a.buttonResponseHasMedia" class="chat-row-recv">
-                            <div>
-                              <div class="tg-bubble">
-                                <img v-if="a.buttonResponseImage" :src="a.buttonResponseImage" class="tg-bubble-img" alt="" />
-                                <div v-else-if="a.buttonResponseHasMedia" class="tg-bubble-img-placeholder">📷</div>
-                                <div v-if="a.buttonResponseHtml" class="tg-bubble-text" v-html="a.buttonResponseHtml" />
-                              </div>
-                              <div v-if="a.buttonResponseButtons?.length" class="tg-keyboard">
-                                <div v-for="(row, ri) in a.buttonResponseButtons" :key="ri" class="tg-keyboard-row">
-                                  <div v-for="btn in row" :key="btn" class="tg-btn">{{ btn }}</div>
+                            <div
+                              v-if="
+                                a.buttonResponseHtml || a.buttonResponseHasMedia
+                              "
+                              class="chat-row-recv"
+                            >
+                              <div>
+                                <div class="tg-bubble">
+                                  <img
+                                    v-if="a.buttonResponseImage"
+                                    :src="a.buttonResponseImage"
+                                    class="tg-bubble-img"
+                                    alt=""
+                                  />
+                                  <div
+                                    v-else-if="a.buttonResponseHasMedia"
+                                    class="tg-bubble-img-placeholder"
+                                  >
+                                    📷
+                                  </div>
+                                  <div
+                                    v-if="a.buttonResponseHtml"
+                                    class="tg-bubble-text"
+                                    v-html="a.buttonResponseHtml"
+                                  />
+                                </div>
+                                <div
+                                  v-if="a.buttonResponseButtons?.length"
+                                  class="tg-keyboard"
+                                >
+                                  <div
+                                    v-for="(row, ri) in a.buttonResponseButtons"
+                                    :key="ri"
+                                    class="tg-keyboard-row"
+                                  >
+                                    <div
+                                      v-for="btn in row"
+                                      :key="btn"
+                                      class="tg-btn"
+                                    >
+                                      {{ btn }}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
+                            <div v-if="a.callbackAnswer" class="chat-row-recv">
+                              <div class="bubble-callback">
+                                {{ a.callbackAnswer }}
+                              </div>
+                            </div>
+                            <div v-if="a.error" class="chat-error">
+                              {{ a.error }}
+                            </div>
                           </div>
-                          <div v-if="a.callbackAnswer" class="chat-row-recv">
-                            <div class="bubble-callback">{{ a.callbackAnswer }}</div>
-                          </div>
-                          <div v-if="a.error" class="chat-error">{{ a.error }}</div>
-                        </div>
                         </div>
                       </div>
                     </div>
@@ -189,99 +519,353 @@
 
               <!-- Detail panel — custom jobs: step-by-step timeline -->
               <tr v-if="l.jobType === 'custom' && expandedId === l.id">
-                <td colspan="5" style="padding:0;background:#f8f9fa;border-top:none">
+                <td
+                  colspan="5"
+                  style="padding: 0; background: #f8f9fa; border-top: none"
+                >
                   <div class="detail-panel">
-                    <div v-if="detailLoading" style="color:#888;font-size:13px">{{ t('logs.detail.loading') }}</div>
-                    <div v-else-if="!customDetail?.length" style="color:#888;font-size:13px">{{ t('logs.detail.noDetail') }}</div>
+                    <div
+                      v-if="detailLoading"
+                      style="color: #888; font-size: 13px"
+                    >
+                      {{ t("logs.detail.loading") }}
+                    </div>
+                    <div
+                      v-else-if="!customDetail?.length"
+                      style="color: #888; font-size: 13px"
+                    >
+                      {{ t("logs.detail.noDetail") }}
+                    </div>
                     <div v-else class="custom-steps">
-                      <div v-for="s in customDetail" :key="s.step" class="custom-step" :class="s.error ? 'custom-step-error' : ''">
+                      <div
+                        v-for="(s, sIdx) in customDetail"
+                        :key="sIdx"
+                        class="custom-step"
+                        :class="
+                          s.error && !retriedStepNums.has(s.step)
+                            ? 'custom-step-error'
+                            : ''
+                        "
+                      >
                         <div class="custom-step-header">
                           <span class="custom-step-num">{{ s.step }}</span>
-                          <span class="custom-step-label">{{ s.label || s.actionType }}</span>
-                          <span v-if="s.durationMs != null" class="custom-step-duration">{{ s.durationMs }}ms</span>
-                          <span v-if="s.error" class="badge badge-red" style="font-size:10px">failed</span>
-                          <span v-else-if="s.result" class="badge badge-green" style="font-size:10px">ok</span>
-                          <button v-if="s.aiPrompt != null" class="btn btn-ghost btn-sm btn-icon debug-open-btn" :class="{ 'debug-open-btn-active': debugKey === `${expandedId}-${s.step}` }" :title="t('logs.debug.open')" @click="openDebug(s)"><i class="fa-solid fa-flask"></i></button>
+                          <span class="custom-step-label">{{
+                            s.label || s.actionType
+                          }}</span>
+                          <span
+                            v-if="s.durationMs != null"
+                            class="custom-step-duration"
+                            >{{ s.durationMs }}ms</span
+                          >
+                          <span
+                            v-if="s.error && retriedStepNums.has(s.step)"
+                            class="badge badge-orange"
+                            style="font-size: 10px"
+                            >retried</span
+                          >
+                          <span
+                            v-else-if="s.error"
+                            class="badge badge-red"
+                            style="font-size: 10px"
+                            >failed</span
+                          >
+                          <span
+                            v-else-if="s.result"
+                            class="badge badge-green"
+                            style="font-size: 10px"
+                            >ok</span
+                          >
+                          <button
+                            v-if="s.aiPrompt != null"
+                            class="btn btn-ghost btn-sm btn-icon debug-open-btn"
+                            :class="{
+                              'debug-open-btn-active':
+                                debugKey === `${expandedId}-${sIdx}`,
+                            }"
+                            :title="t('logs.debug.open')"
+                            @click="openDebug(s)"
+                          >
+                            <i class="fa-solid fa-flask"></i>
+                          </button>
                         </div>
                         <!-- Pre-click context: bot message received while waiting for buttons -->
-                        <div v-if="s.preClickHtml || s.preClickImage || s.preClickHasMedia || s.preClickButtons?.length" class="chat-bg" style="margin-top:6px">
+                        <div
+                          v-if="
+                            s.preClickHtml ||
+                            s.preClickImage ||
+                            s.preClickHasMedia ||
+                            s.preClickButtons?.length
+                          "
+                          class="chat-bg"
+                          style="margin-top: 6px"
+                        >
                           <div class="chat-log">
                             <div class="chat-row-recv">
                               <div>
                                 <div class="tg-bubble">
-                                  <img v-if="s.preClickImage" :src="s.preClickImage" class="tg-bubble-img" alt="" />
-                                  <div v-else-if="s.preClickHasMedia" class="tg-bubble-img-placeholder">📷</div>
-                                  <div v-if="s.preClickHtml" class="tg-bubble-text" v-html="s.preClickHtml" />
+                                  <img
+                                    v-if="s.preClickImage"
+                                    :src="s.preClickImage"
+                                    class="tg-bubble-img"
+                                    alt=""
+                                  />
+                                  <div
+                                    v-else-if="s.preClickHasMedia"
+                                    class="tg-bubble-img-placeholder"
+                                  >
+                                    📷
+                                  </div>
+                                  <div
+                                    v-if="s.preClickHtml"
+                                    class="tg-bubble-text"
+                                    v-html="s.preClickHtml"
+                                  />
                                 </div>
-                                <div v-if="s.preClickButtons?.length" class="tg-keyboard">
-                                  <div v-for="(row, ri) in s.preClickButtons" :key="ri" class="tg-keyboard-row">
-                                    <div v-for="btn in row" :key="btn" :class="btn === s.clickedButton ? 'tg-btn tg-btn-active' : 'tg-btn'">{{ btn }}</div>
+                                <div
+                                  v-if="s.preClickButtons?.length"
+                                  class="tg-keyboard"
+                                >
+                                  <div
+                                    v-for="(row, ri) in s.preClickButtons"
+                                    :key="ri"
+                                    class="tg-keyboard-row"
+                                  >
+                                    <div
+                                      v-for="btn in row"
+                                      :key="btn"
+                                      :class="
+                                        btn === s.clickedButton
+                                          ? 'tg-btn tg-btn-active'
+                                          : 'tg-btn'
+                                      "
+                                    >
+                                      {{ btn }}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
                             </div>
                           </div>
                         </div>
-                        <div v-if="showDevLogs && (s.msgCount != null || s.responseSource || s.retryCount != null || s.errorName)" class="dev-step-meta">
-                          <span v-if="s.msgCount != null">{{ t('logs.dev.msgCount') }}: {{ s.msgCount }}</span>
-                          <span v-if="s.responseSource">{{ t('logs.dev.responseSource') }}: {{ s.responseSource }}</span>
-                          <span v-if="s.retryCount != null">{{ t('logs.dev.retryCount') }}: {{ s.retryCount }}</span>
-                          <span v-if="s.errorName">{{ t('logs.dev.errorName') }}: {{ s.errorName }}</span>
+                        <div
+                          v-if="
+                            showDevLogs &&
+                            (s.msgCount != null ||
+                              s.responseSource ||
+                              s.retryCount != null ||
+                              s.errorName)
+                          "
+                          class="dev-step-meta"
+                        >
+                          <span v-if="s.msgCount != null"
+                            >{{ t("logs.dev.msgCount") }}:
+                            {{ s.msgCount }}</span
+                          >
+                          <span v-if="s.responseSource"
+                            >{{ t("logs.dev.responseSource") }}:
+                            {{ s.responseSource }}</span
+                          >
+                          <span v-if="s.retryCount != null"
+                            >{{ t("logs.dev.retryCount") }}:
+                            {{ s.retryCount }}</span
+                          >
+                          <span v-if="s.errorName"
+                            >{{ t("logs.dev.errorName") }}:
+                            {{ s.errorName }}</span
+                          >
                         </div>
-                        <div v-if="s.callbackAnswer" class="custom-step-callback">{{ s.callbackAnswer }}</div>
+                        <div
+                          v-if="s.callbackAnswer"
+                          class="custom-step-callback"
+                        >
+                          {{ s.callbackAnswer }}
+                        </div>
                         <!-- Response after the action -->
-                        <div v-if="s.responseHtml || s.responseImage || s.responseHasMedia || s.responseButtons?.length" class="chat-bg" style="margin-top:6px">
+                        <div
+                          v-if="
+                            s.responseHtml ||
+                            s.responseImage ||
+                            s.responseHasMedia ||
+                            s.responseButtons?.length
+                          "
+                          class="chat-bg"
+                          style="margin-top: 6px"
+                        >
                           <div class="chat-log">
                             <div class="chat-row-recv">
                               <div>
                                 <div class="tg-bubble">
-                                  <img v-if="s.responseImage" :src="s.responseImage" class="tg-bubble-img" alt="" />
-                                  <div v-else-if="s.responseHasMedia" class="tg-bubble-img-placeholder">📷</div>
-                                  <div v-if="s.responseHtml" class="tg-bubble-text" v-html="s.responseHtml" />
+                                  <img
+                                    v-if="s.responseImage"
+                                    :src="s.responseImage"
+                                    class="tg-bubble-img"
+                                    alt=""
+                                  />
+                                  <div
+                                    v-else-if="s.responseHasMedia"
+                                    class="tg-bubble-img-placeholder"
+                                  >
+                                    📷
+                                  </div>
+                                  <div
+                                    v-if="s.responseHtml"
+                                    class="tg-bubble-text"
+                                    v-html="s.responseHtml"
+                                  />
                                 </div>
-                                <div v-if="s.responseButtons?.length" class="tg-keyboard">
-                                  <div v-for="(row, ri) in s.responseButtons" :key="ri" class="tg-keyboard-row">
-                                    <div v-for="btn in row" :key="btn" class="tg-btn">{{ btn }}</div>
+                                <div
+                                  v-if="s.responseButtons?.length"
+                                  class="tg-keyboard"
+                                >
+                                  <div
+                                    v-for="(row, ri) in s.responseButtons"
+                                    :key="ri"
+                                    class="tg-keyboard-row"
+                                  >
+                                    <div
+                                      v-for="btn in row"
+                                      :key="btn"
+                                      class="tg-btn"
+                                    >
+                                      {{ btn }}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
                             </div>
                           </div>
                         </div>
-                        <div v-if="s.error" class="chat-error" style="margin-top:4px">{{ s.error }}</div>
+                        <div
+                          v-if="s.error"
+                          class="chat-error"
+                          style="margin-top: 4px"
+                        >
+                          {{ s.error }}
+                        </div>
                         <template v-if="s.aiPrompt != null">
-                          <div class="dev-block" style="margin-top:8px">
-                            <div class="dev-block-label">{{ t('logs.aiPrompt') }}</div>
-                            <img v-if="s.preClickImage" :src="s.preClickImage" class="dev-block-img" alt="image sent to AI" />
+                          <div class="dev-block" style="margin-top: 8px">
+                            <div class="dev-block-label">
+                              {{ t("logs.aiPrompt") }}
+                            </div>
+                            <img
+                              v-if="s.preClickImage"
+                              :src="s.preClickImage"
+                              class="dev-block-img"
+                              alt="image sent to AI"
+                            />
                             <pre class="dev-block-pre">{{ s.aiPrompt }}</pre>
                           </div>
-                          <div class="dev-block" style="margin-top:4px">
-                            <div class="dev-block-label">{{ t('logs.aiResponse') }}{{ s.aiDurationMs != null ? ` (${(s.aiDurationMs / 1000).toFixed(1)}s)` : '' }}</div>
+                          <div class="dev-block" style="margin-top: 4px">
+                            <div class="dev-block-label">
+                              {{ t("logs.aiResponse")
+                              }}{{
+                                s.aiDurationMs != null
+                                  ? ` (${(s.aiDurationMs / 1000).toFixed(1)}s)`
+                                  : ""
+                              }}
+                            </div>
                             <pre class="dev-block-pre">{{ s.aiResponse }}</pre>
                           </div>
-                          <div v-if="s.aiRetries?.length" class="dev-block" style="margin-top:4px">
-                            <div class="dev-block-label">{{ t('logs.aiRetries') }} ({{ s.aiRetries.length }})</div>
-                            <pre class="dev-block-pre">{{ s.aiRetries.map((r, i) => `#${i+1}: ${r}`).join('\n') }}</pre>
+                          <div
+                            v-if="s.aiRetries?.length"
+                            class="dev-block"
+                            style="margin-top: 4px"
+                          >
+                            <div class="dev-block-label">
+                              {{ t("logs.aiRetries") }} ({{
+                                s.aiRetries.length
+                              }})
+                            </div>
+                            <pre class="dev-block-pre">{{
+                              s.aiRetries
+                                .map((r, i) => `#${i + 1}: ${r}`)
+                                .join("\n")
+                            }}</pre>
                           </div>
                         </template>
                         <!-- AI debug / replay panel -->
-                        <div v-if="s.aiPrompt != null && debugKey === `${expandedId}-${s.step}`" class="debug-panel">
-                          <div class="debug-panel-title">{{ t('logs.debug.title') }}</div>
-                          <img v-if="debugImages[0]" :src="debugImages[0]" class="debug-panel-img" alt="" />
-                          <textarea v-model="debugPrompt" class="debug-panel-textarea" rows="5" :placeholder="t('logs.debug.promptPlaceholder')" />
-                          <div class="debug-panel-controls">
-                            <span class="debug-tokens-label">{{ t('logs.debug.model') }}</span>
-                            <input v-model="debugModel" class="form-input debug-model-input" type="text" :placeholder="t('logs.debug.model')" />
-                            <span class="debug-tokens-label">{{ t('logs.debug.maxTokens') }}</span>
-                            <input v-model.number="debugMaxTokens" class="form-input debug-tokens-input" type="number" min="10" max="100000" step="100" />
-                            <button class="btn btn-primary btn-sm" :disabled="debugRunning" @click="runDebug">{{ debugRunning ? t('logs.debug.running') : t('logs.debug.run') }}</button>
-                            <button class="btn btn-ghost btn-sm" @click="debugKey = null">{{ t('logs.debug.close') }}</button>
+                        <div
+                          v-if="
+                            s.aiPrompt != null &&
+                            debugKey === `${expandedId}-${sIdx}`
+                          "
+                          class="debug-panel"
+                        >
+                          <div class="debug-panel-title">
+                            {{ t("logs.debug.title") }}
                           </div>
-                          <div v-if="debugResponse != null" class="debug-panel-response">
-                            <div class="dev-block-label">{{ t('logs.debug.response') }}{{ debugDurationMs != null ? ` (${(debugDurationMs / 1000).toFixed(1)}s)` : '' }}</div>
+                          <img
+                            v-if="debugImages[0]"
+                            :src="debugImages[0]"
+                            class="debug-panel-img"
+                            alt=""
+                          />
+                          <textarea
+                            v-model="debugPrompt"
+                            class="debug-panel-textarea"
+                            rows="5"
+                            :placeholder="t('logs.debug.promptPlaceholder')"
+                          />
+                          <div class="debug-panel-controls">
+                            <span class="debug-tokens-label">{{
+                              t("logs.debug.model")
+                            }}</span>
+                            <input
+                              v-model="debugModel"
+                              class="form-input debug-model-input"
+                              type="text"
+                              :placeholder="t('logs.debug.model')"
+                            />
+                            <span class="debug-tokens-label">{{
+                              t("logs.debug.maxTokens")
+                            }}</span>
+                            <input
+                              v-model.number="debugMaxTokens"
+                              class="form-input debug-tokens-input"
+                              type="number"
+                              min="10"
+                              max="100000"
+                              step="100"
+                            />
+                            <button
+                              class="btn btn-primary btn-sm"
+                              :disabled="debugRunning"
+                              @click="runDebug"
+                            >
+                              {{
+                                debugRunning
+                                  ? t("logs.debug.running")
+                                  : t("logs.debug.run")
+                              }}
+                            </button>
+                            <button
+                              class="btn btn-ghost btn-sm"
+                              @click="debugKey = null"
+                            >
+                              {{ t("logs.debug.close") }}
+                            </button>
+                          </div>
+                          <div
+                            v-if="debugResponse != null"
+                            class="debug-panel-response"
+                          >
+                            <div class="dev-block-label">
+                              {{ t("logs.debug.response")
+                              }}{{
+                                debugDurationMs != null
+                                  ? ` (${(debugDurationMs / 1000).toFixed(1)}s)`
+                                  : ""
+                              }}
+                            </div>
                             <pre class="dev-block-pre">{{ debugResponse }}</pre>
                           </div>
-                          <div v-if="debugError" class="chat-error" style="margin-top:6px">{{ debugError }}</div>
+                          <div
+                            v-if="debugError"
+                            class="chat-error"
+                            style="margin-top: 6px"
+                          >
+                            {{ debugError }}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -291,40 +875,95 @@
 
               <!-- Detail panel — embywatch jobs: playback summary -->
               <tr v-if="l.jobType === 'embywatch' && expandedId === l.id">
-                <td colspan="5" style="padding:0;background:#f8f9fa;border-top:none">
+                <td
+                  colspan="5"
+                  style="padding: 0; background: #f8f9fa; border-top: none"
+                >
                   <div class="detail-panel">
-                    <div v-if="detailLoading" style="color:#888;font-size:13px">{{ t('logs.detail.loading') }}</div>
-                    <div v-else-if="!embywatchDetail" style="color:#888;font-size:13px">{{ t('logs.detail.noDetail') }}</div>
+                    <div
+                      v-if="detailLoading"
+                      style="color: #888; font-size: 13px"
+                    >
+                      {{ t("logs.detail.loading") }}
+                    </div>
+                    <div
+                      v-else-if="!embywatchDetail"
+                      style="color: #888; font-size: 13px"
+                    >
+                      {{ t("logs.detail.noDetail") }}
+                    </div>
                     <div v-else class="emby-detail">
                       <div class="emby-title">
-                        <template v-if="embywatchDetail.seriesName">{{ embywatchDetail.seriesName }} — {{ embywatchDetail.title }}</template>
+                        <template v-if="embywatchDetail.seriesName"
+                          >{{ embywatchDetail.seriesName }} —
+                          {{ embywatchDetail.title }}</template
+                        >
                         <template v-else>{{ embywatchDetail.title }}</template>
                       </div>
-                      <div v-if="embywatchDetail.seasonNumber != null" class="emby-episode-label">
-                        S{{ String(embywatchDetail.seasonNumber).padStart(2, '0') }}E{{ String(embywatchDetail.episodeNumber ?? 0).padStart(2, '0') }}
+                      <div
+                        v-if="embywatchDetail.seasonNumber != null"
+                        class="emby-episode-label"
+                      >
+                        S{{
+                          String(embywatchDetail.seasonNumber).padStart(2, "0")
+                        }}E{{
+                          String(embywatchDetail.episodeNumber ?? 0).padStart(
+                            2,
+                            "0",
+                          )
+                        }}
                         &nbsp;·&nbsp;{{ embywatchDetail.itemType }}
                       </div>
                       <div class="emby-stats">
                         <div class="emby-stat">
-                          <div class="emby-stat-label">{{ t('logs.embyDetail.runtime') }}</div>
-                          <div class="emby-stat-value">{{ fmtSeconds(embywatchDetail.runtimeSeconds) }}</div>
+                          <div class="emby-stat-label">
+                            {{ t("logs.embyDetail.runtime") }}
+                          </div>
+                          <div class="emby-stat-value">
+                            {{ fmtSeconds(embywatchDetail.runtimeSeconds) }}
+                          </div>
                         </div>
                         <div class="emby-stat">
-                          <div class="emby-stat-label">{{ t('logs.embyDetail.start') }}</div>
-                          <div class="emby-stat-value">{{ fmtSeconds(embywatchDetail.startSeconds) }}</div>
+                          <div class="emby-stat-label">
+                            {{ t("logs.embyDetail.start") }}
+                          </div>
+                          <div class="emby-stat-value">
+                            {{ fmtSeconds(embywatchDetail.startSeconds) }}
+                          </div>
                         </div>
                         <div class="emby-stat">
-                          <div class="emby-stat-label">{{ t('logs.embyDetail.end') }}</div>
-                          <div class="emby-stat-value">{{ fmtSeconds(embywatchDetail.endSeconds) }}</div>
+                          <div class="emby-stat-label">
+                            {{ t("logs.embyDetail.end") }}
+                          </div>
+                          <div class="emby-stat-value">
+                            {{ fmtSeconds(embywatchDetail.endSeconds) }}
+                          </div>
                         </div>
                         <div class="emby-stat">
-                          <div class="emby-stat-label">{{ t('logs.embyDetail.watched') }}</div>
-                          <div class="emby-stat-value">{{ fmtSeconds(embywatchDetail.watchedSeconds) }}</div>
+                          <div class="emby-stat-label">
+                            {{ t("logs.embyDetail.watched") }}
+                          </div>
+                          <div class="emby-stat-value">
+                            {{ fmtSeconds(embywatchDetail.watchedSeconds) }}
+                          </div>
                         </div>
                         <div class="emby-stat">
-                          <div class="emby-stat-label">{{ t('logs.embyDetail.markedWatched') }}</div>
-                          <div class="emby-stat-value" :style="embywatchDetail.markedWatched ? 'color:#065f46' : 'color:#991b1b'">
-                            {{ embywatchDetail.markedWatched ? t('logs.embyDetail.yes') : t('logs.embyDetail.no') }}
+                          <div class="emby-stat-label">
+                            {{ t("logs.embyDetail.markedWatched") }}
+                          </div>
+                          <div
+                            class="emby-stat-value"
+                            :style="
+                              embywatchDetail.markedWatched
+                                ? 'color:#065f46'
+                                : 'color:#991b1b'
+                            "
+                          >
+                            {{
+                              embywatchDetail.markedWatched
+                                ? t("logs.embyDetail.yes")
+                                : t("logs.embyDetail.no")
+                            }}
                           </div>
                         </div>
                       </div>
@@ -337,23 +976,40 @@
         </table>
       </div>
 
-      <div v-if="logs.length === 50" style="padding:12px 16px;text-align:center">
-        <button class="btn btn-ghost btn-sm" @click="loadMore"><i class="fa-solid fa-chevron-down"></i> {{ t('common.loadMore') }}</button>
+      <div
+        v-if="logs.length === 50"
+        style="padding: 12px 16px; text-align: center"
+      >
+        <button class="btn btn-ghost btn-sm" @click="loadMore">
+          <i class="fa-solid fa-chevron-down"></i> {{ t("common.loadMore") }}
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { logsApi, jobsApi, debugApi, settingsApi, aiSuppliersApi, type Log, type Job, type CheckinAttemptLog, type EmbywatchLog, type CustomStepLog, type AiSupplier } from '../api/client';
-import { t, locale } from '../i18n';
-import { usePersistedRef } from '../composables/usePersistedRef';
+import { ref, computed, onMounted, onUnmounted } from "vue";
+import {
+  logsApi,
+  jobsApi,
+  debugApi,
+  settingsApi,
+  aiSuppliersApi,
+  type Log,
+  type Job,
+  type CheckinAttemptLog,
+  type EmbywatchLog,
+  type CustomStepLog,
+  type AiSupplier,
+} from "../api/client";
+import { t, locale } from "../i18n";
+import { usePersistedRef } from "../composables/usePersistedRef";
 
 const logs = ref<Log[]>([]);
 const jobs = ref<Job[]>([]);
-const filterJobId = usePersistedRef<number | ''>('bemby:logs:filterJobId', '');
-const showDevLogs = usePersistedRef<boolean>('bemby:logs:showDevLogs', false);
+const filterJobId = usePersistedRef<number | "">("bemby:logs:filterJobId", "");
+const showDevLogs = usePersistedRef<boolean>("bemby:logs:showDevLogs", false);
 const offset = ref(0);
 
 const expandedId = ref<number | null>(null);
@@ -365,9 +1021,9 @@ let detailPollTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ── AI debug panel ────────────────────────────────────────────────────────────
 const debugKey = ref<string | null>(null);
-const debugPrompt = ref('');
+const debugPrompt = ref("");
 const debugImages = ref<string[]>([]);
-const debugModel = ref('');
+const debugModel = ref("");
 const debugMaxTokens = ref(5000);
 const debugSuppliers = ref<AiSupplier[]>([]);
 const debugRunning = ref(false);
@@ -377,9 +1033,12 @@ const debugDurationMs = ref<number | null>(null);
 
 function openDebug(step: CustomStepLog) {
   const key = `${expandedId.value}-${step.step}`;
-  if (debugKey.value === key) { debugKey.value = null; return; }
+  if (debugKey.value === key) {
+    debugKey.value = null;
+    return;
+  }
   debugKey.value = key;
-  debugPrompt.value = step.aiPrompt ?? '';
+  debugPrompt.value = step.aiPrompt ?? "";
   debugImages.value = step.preClickImage ? [step.preClickImage] : [];
   debugMaxTokens.value = 5000;
   debugResponse.value = null;
@@ -389,9 +1048,12 @@ function openDebug(step: CustomStepLog) {
 
 function openDebugCheckin(attempt: CheckinAttemptLog) {
   const key = `${expandedId.value}-attempt-${attempt.attempt}`;
-  if (debugKey.value === key) { debugKey.value = null; return; }
+  if (debugKey.value === key) {
+    debugKey.value = null;
+    return;
+  }
   debugKey.value = key;
-  debugPrompt.value = attempt.aiPrompt ?? '';
+  debugPrompt.value = attempt.aiPrompt ?? "";
   debugImages.value = attempt.commandResponseImages ?? [];
   debugMaxTokens.value = 5000;
   debugResponse.value = null;
@@ -405,11 +1067,17 @@ async function runDebug() {
   debugError.value = null;
   debugDurationMs.value = null;
   try {
-    const result = await debugApi.runAi(debugImages.value, debugPrompt.value, debugMaxTokens.value, debugModel.value || undefined);
+    const result = await debugApi.runAi(
+      debugImages.value,
+      debugPrompt.value,
+      debugMaxTokens.value,
+      debugModel.value || undefined,
+    );
     debugResponse.value = result.response;
     debugDurationMs.value = result.durationMs;
   } catch (err: any) {
-    debugError.value = err?.response?.data?.error ?? err?.message ?? String(err);
+    debugError.value =
+      err?.response?.data?.error ?? err?.message ?? String(err);
   } finally {
     debugRunning.value = false;
   }
@@ -418,13 +1086,15 @@ async function runDebug() {
 // Typed accessors for the two detail formats
 const checkinDetail = computed(() => {
   if (!expandedDetail.value?.length) return null;
-  if ('attempt' in expandedDetail.value[0]) return expandedDetail.value as CheckinAttemptLog[];
+  if ("attempt" in expandedDetail.value[0])
+    return expandedDetail.value as CheckinAttemptLog[];
   return null;
 });
 
 const embywatchDetail = computed(() => {
   if (!expandedDetail.value?.length) return null;
-  if ('itemType' in expandedDetail.value[0]) return expandedDetail.value[0] as EmbywatchLog;
+  if ("itemType" in expandedDetail.value[0])
+    return expandedDetail.value[0] as EmbywatchLog;
   return null;
 });
 
@@ -433,22 +1103,43 @@ const customDetail = computed(() => {
   const d = expandedDetail.value as any;
   // detail is stored as an array; custom log is the first element
   const first = Array.isArray(d) ? d[0] : d;
-  if (first && 'steps' in first && Array.isArray(first.steps)) return first.steps as CustomStepLog[];
+  if (first && "steps" in first && Array.isArray(first.steps))
+    return first.steps as CustomStepLog[];
   return null;
+});
+
+// Step numbers that had at least one failure followed by a success (action-level retries)
+const retriedStepNums = computed(() => {
+  const steps = customDetail.value;
+  if (!steps) return new Set<number>();
+  const succeeded = new Set(steps.filter((s) => !s.error).map((s) => s.step));
+  return new Set(
+    steps.filter((s) => s.error && succeeded.has(s.step)).map((s) => s.step),
+  );
 });
 
 onMounted(async () => {
   jobs.value = await jobsApi.list();
   await load();
-  settingsApi.get().then(s => { if (s.ai_model) debugModel.value = s.ai_model; }).catch(() => {});
-  aiSuppliersApi.list().then(list => { debugSuppliers.value = list; }).catch(() => {});
+  settingsApi
+    .get()
+    .then((s) => {
+      if (s.ai_model) debugModel.value = s.ai_model;
+    })
+    .catch(() => {});
+  aiSuppliersApi
+    .list()
+    .then((list) => {
+      debugSuppliers.value = list;
+    })
+    .catch(() => {});
 });
 
 async function load() {
   offset.value = 0;
   expandedId.value = null;
   logs.value = await logsApi.list({
-    jobId: filterJobId.value === '' ? undefined : Number(filterJobId.value),
+    jobId: filterJobId.value === "" ? undefined : Number(filterJobId.value),
     limit: 50,
     offset: 0,
   });
@@ -457,7 +1148,7 @@ async function load() {
 async function loadMore() {
   offset.value += 50;
   const more = await logsApi.list({
-    jobId: filterJobId.value === '' ? undefined : Number(filterJobId.value),
+    jobId: filterJobId.value === "" ? undefined : Number(filterJobId.value),
     limit: 50,
     offset: offset.value,
   });
@@ -472,12 +1163,12 @@ async function stopJob(log: Log) {
     const poll = async () => {
       try {
         const updated = await logsApi.getOne(log.id);
-        const entry = logs.value.find(l => l.id === log.id);
+        const entry = logs.value.find((l) => l.id === log.id);
         if (entry) {
           entry.status = updated.status;
           entry.message = updated.message;
         }
-        if (updated.status === 'running') {
+        if (updated.status === "running") {
           pollTimer = setTimeout(poll, 1500);
         } else {
           stopping.value.delete(log.id);
@@ -496,7 +1187,10 @@ async function stopJob(log: Log) {
 }
 
 function clearDetailPoll() {
-  if (detailPollTimer) { clearTimeout(detailPollTimer); detailPollTimer = null; }
+  if (detailPollTimer) {
+    clearTimeout(detailPollTimer);
+    detailPollTimer = null;
+  }
 }
 
 async function fetchDetail(logId: number, showLoading = true) {
@@ -505,8 +1199,11 @@ async function fetchDetail(logId: number, showLoading = true) {
     const full = await logsApi.getOne(logId);
     if (expandedId.value !== logId) return null;
     expandedDetail.value = full.detail ?? null;
-    const entry = logs.value.find(l => l.id === logId);
-    if (entry) { entry.status = full.status; entry.message = full.message; }
+    const entry = logs.value.find((l) => l.id === logId);
+    if (entry) {
+      entry.status = full.status;
+      entry.message = full.message;
+    }
     return full;
   } catch {
     return null;
@@ -519,7 +1216,8 @@ function scheduleDetailPoll(logId: number) {
   clearDetailPoll();
   detailPollTimer = setTimeout(async () => {
     const full = await fetchDetail(logId, false);
-    if (full?.status === 'running' && expandedId.value === logId) scheduleDetailPoll(logId);
+    if (full?.status === "running" && expandedId.value === logId)
+      scheduleDetailPoll(logId);
   }, 1000);
 }
 
@@ -534,16 +1232,17 @@ async function toggleDetail(log: Log) {
   expandedId.value = log.id;
   expandedDetail.value = null;
   const full = await fetchDetail(log.id);
-  if (full?.status === 'running' && expandedId.value === log.id) scheduleDetailPoll(log.id);
+  if (full?.status === "running" && expandedId.value === log.id)
+    scheduleDetailPoll(log.id);
 }
 
-function statusBadge(s: Log['status']) {
+function statusBadge(s: Log["status"]) {
   const map: Record<string, string> = {
-    success: 'badge badge-green',
-    failed:  'badge badge-red',
-    running: 'badge badge-orange',
+    success: "badge badge-green",
+    failed: "badge badge-red",
+    running: "badge badge-orange",
   };
-  return map[s] ?? 'badge badge-grey';
+  return map[s] ?? "badge badge-grey";
 }
 
 onUnmounted(() => {
@@ -552,16 +1251,23 @@ onUnmounted(() => {
 });
 
 function fmtDate(iso: string) {
-  const localeMap: Record<string, string> = { en: 'en-AU', zh: 'zh-CN' };
-  return new Date(iso).toLocaleString(localeMap[locale.value] ?? 'en-AU', {
-    month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  const localeMap: Record<string, string> = { en: "en-AU", zh: "zh-CN" };
+  return new Date(iso).toLocaleString(localeMap[locale.value] ?? "en-AU", {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
   });
 }
 
 function fmtDateShort(iso: string) {
-  const localeMap: Record<string, string> = { en: 'en-AU', zh: 'zh-CN' };
-  return new Date(iso).toLocaleString(localeMap[locale.value] ?? 'en-AU', {
-    month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  const localeMap: Record<string, string> = { en: "en-AU", zh: "zh-CN" };
+  return new Date(iso).toLocaleString(localeMap[locale.value] ?? "en-AU", {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -569,8 +1275,9 @@ function fmtSeconds(s: number): string {
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-  return `${m}:${String(sec).padStart(2, '0')}`;
+  if (h > 0)
+    return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${m}:${String(sec).padStart(2, "0")}`;
 }
 </script>
 
@@ -717,9 +1424,21 @@ function fmtSeconds(s: number): string {
   line-height: 1.55;
   color: #111;
 }
-.tg-bubble-text a { color: #2563eb; }
-.tg-bubble-text code { background: #d4d4d6; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
-.tg-bubble-text pre { background: #d4d4d6; padding: 8px; border-radius: 4px; overflow-x: auto; }
+.tg-bubble-text a {
+  color: #2563eb;
+}
+.tg-bubble-text code {
+  background: #d4d4d6;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.tg-bubble-text pre {
+  background: #d4d4d6;
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
 
 .tg-keyboard {
   margin-top: 4px;
@@ -976,7 +1695,8 @@ function fmtSeconds(s: number): string {
   opacity: 0.5;
   font-size: 11px;
 }
-.debug-open-btn:hover, .debug-open-btn-active {
+.debug-open-btn:hover,
+.debug-open-btn-active {
   opacity: 1;
   color: #89b4fa;
 }
