@@ -182,7 +182,7 @@
               </div>
               <div class="form-group">
                 <label class="form-label">{{ t("settings.supplierApiKey") }}</label>
-                <input v-model.trim="editForm.api_key" class="form-input" type="password" autocomplete="off" placeholder="sk-..." />
+                <input v-model.trim="editForm.api_key" class="form-input" type="text" autocomplete="off" placeholder="sk-..." />
               </div>
               <div style="display:flex;gap:8px">
                 <button class="btn btn-primary btn-sm" :disabled="supplierSaving" @click="saveEditSupplier(s.id)">
@@ -234,7 +234,7 @@
             </div>
             <div class="form-group">
               <label class="form-label">{{ t("settings.supplierApiKey") }}</label>
-              <input v-model.trim="newSupplierForm.api_key" class="form-input" type="password" autocomplete="off" placeholder="sk-..." />
+              <input v-model.trim="newSupplierForm.api_key" class="form-input" type="text" autocomplete="off" placeholder="sk-..." />
             </div>
             <div style="display:flex;gap:8px">
               <button class="btn btn-primary btn-sm" :disabled="supplierSaving || !newSupplierForm.name || !newSupplierForm.base_url" @click="createSupplier">
