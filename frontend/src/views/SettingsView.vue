@@ -4,11 +4,9 @@
       <h2 class="page-title">{{ t("settings.title") }}</h2>
     </div>
 
-    <div
-      style="display: flex; flex-direction: column; gap: 20px; max-width: 640px"
-    >
+    <div class="settings-grid">
       <!-- System defaults -->
-      <div class="card">
+      <div class="card s-col-4">
         <div class="card-body">
           <div class="card-section-title">{{ t("settings.sysDefaults") }}</div>
 
@@ -60,8 +58,121 @@
         </div>
       </div>
 
+      <!-- TG Notifications -->
+      <div class="card s-col-4">
+        <div class="card-body">
+          <div class="card-section-title">
+            {{ t("settings.notifySection") }}
+          </div>
+          <p style="font-size: 12px; color: #888; margin: 0 0 12px">
+            {{ t("settings.notifyHint") }}
+          </p>
+
+          <div v-if="notifyMsg" class="success-msg">{{ notifyMsg }}</div>
+          <div v-if="notifyError" class="error-msg">{{ notifyError }}</div>
+
+          <div class="form-group">
+            <label class="form-label">{{
+              t("settings.labelNotifyUsername")
+            }}</label>
+            <input
+              v-model.trim="notifyForm.username"
+              class="form-input"
+              :placeholder="t('settings.notifyUsernamePlaceholder')"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">{{
+              t("settings.labelNotifyEvents")
+            }}</label>
+            <div class="event-pills">
+              <label
+                v-for="ev in notifyEventOptions"
+                :key="ev.value"
+                class="event-pill"
+                :class="{ active: notifyForm.events.includes(ev.value) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="notifyForm.events.includes(ev.value)"
+                  @change="toggleNotifyEvent(ev.value)"
+                />
+                {{ ev.label }}
+              </label>
+            </div>
+          </div>
+
+          <button
+            class="btn btn-primary"
+            :disabled="notifySaving"
+            @click="saveNotify"
+          >
+            <i class="fa-solid fa-floppy-disk"></i> {{ notifySaving ? t("common.saving") : t("settings.saveBtn") }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Admin credentials -->
+      <div class="card s-col-4">
+        <div class="card-body">
+          <div class="card-section-title">{{ t("settings.adminCreds") }}</div>
+
+          <div v-if="credMsg" class="success-msg">{{ credMsg }}</div>
+          <div v-if="credError" class="error-msg">{{ credError }}</div>
+
+          <div class="form-group">
+            <label class="form-label">
+              {{ t("settings.labelNewUsername") }}
+              <span style="font-weight: 400; color: #aaa">
+                {{ t("settings.hintKeepBlank") }}</span
+              >
+            </label>
+            <input
+              v-model.trim="cred.username"
+              class="form-input"
+              autocomplete="username"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              {{ t("settings.labelNewPassword") }}
+              <span style="font-weight: 400; color: #aaa">
+                {{ t("settings.hintKeepBlank") }}</span
+              >
+            </label>
+            <input
+              v-model="cred.newPassword"
+              class="form-input"
+              type="password"
+              autocomplete="new-password"
+            />
+          </div>
+          <div class="form-group">
+            <label class="form-label"
+              >{{ t("settings.labelCurrentPass") }}
+              <span style="color: #e63946">*</span></label
+            >
+            <input
+              v-model="cred.currentPassword"
+              class="form-input"
+              type="password"
+              autocomplete="current-password"
+            />
+          </div>
+
+          <button
+            class="btn btn-primary"
+            :disabled="credSaving"
+            @click="saveCredentials"
+          >
+            <i class="fa-solid fa-shield-halved"></i> {{ credSaving ? t("common.saving") : t("settings.updateBtn") }}
+          </button>
+        </div>
+      </div>
+
       <!-- Emby defaults -->
-      <div class="card">
+      <div class="card s-col-6">
         <div class="card-body">
           <div class="card-section-title">{{ t("settings.embyDefaults") }}</div>
 
@@ -128,8 +239,87 @@
         </div>
       </div>
 
+      <!-- Import / Export -->
+      <div class="card s-col-6">
+        <div class="card-body">
+          <div class="card-section-title">
+            {{ t("settings.importExport.title") }}
+          </div>
+
+          <div v-if="importMsg" class="success-msg">{{ importMsg }}</div>
+          <div v-if="importError" class="error-msg">{{ importError }}</div>
+
+          <div class="form-group">
+            <p style="font-size: 12px; color: #888; margin: 0 0 8px">
+              {{ t("settings.importExport.exportHint") }}
+            </p>
+            <button class="btn btn-secondary" @click="doExport">
+              <i class="fa-solid fa-file-export"></i> {{ t("settings.importExport.exportBtn") }}
+            </button>
+          </div>
+
+          <hr class="ie-divider" />
+
+          <div class="form-group">
+            <label class="form-label">{{
+              t("settings.importExport.importLabel")
+            }}</label>
+            <input
+              ref="fileInput"
+              type="file"
+              accept=".json"
+              class="form-input"
+              @change="onFileChange"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">{{
+              t("settings.importExport.importMode")
+            }}</label>
+            <div class="import-mode-row">
+              <label class="import-mode-option">
+                <input type="radio" v-model="importMode" value="merge" />
+                <div>
+                  <div class="import-mode-label">
+                    {{ t("settings.importExport.modeMerge") }}
+                  </div>
+                  <div class="import-mode-hint">
+                    {{ t("settings.importExport.modeMergeHint") }}
+                  </div>
+                </div>
+              </label>
+              <label class="import-mode-option">
+                <input type="radio" v-model="importMode" value="replace" />
+                <div>
+                  <div class="import-mode-label">
+                    {{ t("settings.importExport.modeReplace") }}
+                  </div>
+                  <div class="import-mode-hint">
+                    {{ t("settings.importExport.modeReplaceHint") }}
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <button
+            class="btn btn-primary"
+            :disabled="importing"
+            @click="doImport"
+          >
+            <i class="fa-solid fa-file-import"></i>
+            {{
+              importing
+                ? t("settings.importExport.importing")
+                : t("settings.importExport.importBtn")
+            }}
+          </button>
+        </div>
+      </div>
+
       <!-- AI button detection -->
-      <div class="card">
+      <div class="card s-col-12">
         <div class="card-body">
           <div class="card-section-title">{{ t("settings.aiSection") }}</div>
           <p style="font-size: 12px; color: #888; margin: 0 0 16px">
@@ -263,198 +453,6 @@
               <i class="fa-solid fa-floppy-disk"></i> {{ aiSaving ? t("common.saving") : t("settings.saveDefaultModel") }}
             </button>
           </div>
-        </div>
-      </div>
-
-      <!-- TG Notifications -->
-      <div class="card">
-        <div class="card-body">
-          <div class="card-section-title">
-            {{ t("settings.notifySection") }}
-          </div>
-          <p style="font-size: 12px; color: #888; margin: 0 0 12px">
-            {{ t("settings.notifyHint") }}
-          </p>
-
-          <div v-if="notifyMsg" class="success-msg">{{ notifyMsg }}</div>
-          <div v-if="notifyError" class="error-msg">{{ notifyError }}</div>
-
-          <div class="form-group">
-            <label class="form-label">{{
-              t("settings.labelNotifyUsername")
-            }}</label>
-            <input
-              v-model.trim="notifyForm.username"
-              class="form-input"
-              :placeholder="t('settings.notifyUsernamePlaceholder')"
-            />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">{{
-              t("settings.labelNotifyEvents")
-            }}</label>
-            <div class="event-pills">
-              <label
-                v-for="ev in notifyEventOptions"
-                :key="ev.value"
-                class="event-pill"
-                :class="{ active: notifyForm.events.includes(ev.value) }"
-              >
-                <input
-                  type="checkbox"
-                  :checked="notifyForm.events.includes(ev.value)"
-                  @change="toggleNotifyEvent(ev.value)"
-                />
-                {{ ev.label }}
-              </label>
-            </div>
-          </div>
-
-          <button
-            class="btn btn-primary"
-            :disabled="notifySaving"
-            @click="saveNotify"
-          >
-            <i class="fa-solid fa-floppy-disk"></i> {{ notifySaving ? t("common.saving") : t("settings.saveBtn") }}
-          </button>
-        </div>
-      </div>
-
-      <!-- Import / Export -->
-      <div class="card">
-        <div class="card-body">
-          <div class="card-section-title">
-            {{ t("settings.importExport.title") }}
-          </div>
-
-          <div v-if="importMsg" class="success-msg">{{ importMsg }}</div>
-          <div v-if="importError" class="error-msg">{{ importError }}</div>
-
-          <div class="form-group">
-            <p style="font-size: 12px; color: #888; margin: 0 0 8px">
-              {{ t("settings.importExport.exportHint") }}
-            </p>
-            <button class="btn btn-secondary" @click="doExport">
-              <i class="fa-solid fa-file-export"></i> {{ t("settings.importExport.exportBtn") }}
-            </button>
-          </div>
-
-          <hr class="ie-divider" />
-
-          <div class="form-group">
-            <label class="form-label">{{
-              t("settings.importExport.importLabel")
-            }}</label>
-            <input
-              ref="fileInput"
-              type="file"
-              accept=".json"
-              class="form-input"
-              @change="onFileChange"
-            />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">{{
-              t("settings.importExport.importMode")
-            }}</label>
-            <div class="import-mode-row">
-              <label class="import-mode-option">
-                <input type="radio" v-model="importMode" value="merge" />
-                <div>
-                  <div class="import-mode-label">
-                    {{ t("settings.importExport.modeMerge") }}
-                  </div>
-                  <div class="import-mode-hint">
-                    {{ t("settings.importExport.modeMergeHint") }}
-                  </div>
-                </div>
-              </label>
-              <label class="import-mode-option">
-                <input type="radio" v-model="importMode" value="replace" />
-                <div>
-                  <div class="import-mode-label">
-                    {{ t("settings.importExport.modeReplace") }}
-                  </div>
-                  <div class="import-mode-hint">
-                    {{ t("settings.importExport.modeReplaceHint") }}
-                  </div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <button
-            class="btn btn-primary"
-            :disabled="importing"
-            @click="doImport"
-          >
-            <i class="fa-solid fa-file-import"></i>
-            {{
-              importing
-                ? t("settings.importExport.importing")
-                : t("settings.importExport.importBtn")
-            }}
-          </button>
-        </div>
-      </div>
-
-      <!-- Admin credentials -->
-      <div class="card">
-        <div class="card-body">
-          <div class="card-section-title">{{ t("settings.adminCreds") }}</div>
-
-          <div v-if="credMsg" class="success-msg">{{ credMsg }}</div>
-          <div v-if="credError" class="error-msg">{{ credError }}</div>
-
-          <div class="form-group">
-            <label class="form-label">
-              {{ t("settings.labelNewUsername") }}
-              <span style="font-weight: 400; color: #aaa">
-                {{ t("settings.hintKeepBlank") }}</span
-              >
-            </label>
-            <input
-              v-model.trim="cred.username"
-              class="form-input"
-              autocomplete="username"
-            />
-          </div>
-          <div class="form-group">
-            <label class="form-label">
-              {{ t("settings.labelNewPassword") }}
-              <span style="font-weight: 400; color: #aaa">
-                {{ t("settings.hintKeepBlank") }}</span
-              >
-            </label>
-            <input
-              v-model="cred.newPassword"
-              class="form-input"
-              type="password"
-              autocomplete="new-password"
-            />
-          </div>
-          <div class="form-group">
-            <label class="form-label"
-              >{{ t("settings.labelCurrentPass") }}
-              <span style="color: #e63946">*</span></label
-            >
-            <input
-              v-model="cred.currentPassword"
-              class="form-input"
-              type="password"
-              autocomplete="current-password"
-            />
-          </div>
-
-          <button
-            class="btn btn-primary"
-            :disabled="credSaving"
-            @click="saveCredentials"
-          >
-            <i class="fa-solid fa-shield-halved"></i> {{ credSaving ? t("common.saving") : t("settings.updateBtn") }}
-          </button>
         </div>
       </div>
     </div>
@@ -1053,4 +1051,20 @@ async function saveCredentials() {
 }
 .btn-danger { color: #ef4444; }
 .btn-danger:hover { color: #dc2626; }
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.s-col-4 { grid-column: span 4; }
+.s-col-6 { grid-column: span 6; }
+.s-col-12 { grid-column: span 12; }
+@media (max-width: 960px) {
+  .s-col-4 { grid-column: span 6; }
+}
+@media (max-width: 640px) {
+  .s-col-4, .s-col-6 { grid-column: span 12; }
+}
 </style>

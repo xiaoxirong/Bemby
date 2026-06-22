@@ -16,6 +16,10 @@
             {{ j.name }}
           </option>
         </select>
+        <label class="dev-toggle" :title="t('logs.showRetired')">
+          <input type="checkbox" v-model="showRetired" @change="load" />
+          <span class="dev-toggle-label">{{ t("logs.retiredLabel") }}</span>
+        </label>
         <label class="dev-toggle" :title="t('logs.showDevLogs')">
           <input type="checkbox" v-model="showDevLogs" />
           <span class="dev-toggle-label">{{ t("logs.devLogsLabel") }}</span>
@@ -45,7 +49,7 @@
             <template v-for="l in logs" :key="l.id">
               <tr
                 style="cursor: pointer; user-select: none"
-                :class="expandedId === l.id ? 'row-expanded' : ''"
+                :class="[expandedId === l.id ? 'row-expanded' : '', l.retired ? 'row-retired' : '']"
                 @click="toggleDetail(l)"
               >
                 <td class="time-cell">
@@ -90,6 +94,15 @@
                           ? t("common.stopping")
                           : t("common.stop")
                       }}
+                    </button>
+                    <button
+                      v-if="l.status !== 'running'"
+                      class="btn btn-sm btn-ghost btn-icon"
+                      style="flex-shrink: 0; color: #aaa"
+                      :title="l.retired ? t('logs.unretire') : t('logs.retire')"
+                      @click.stop="toggleRetire(l)"
+                    >
+                      <i :class="l.retired ? 'fa-solid fa-rotate-left' : 'fa-solid fa-box-archive'"></i>
                     </button>
                   </div>
                 </td>
@@ -857,6 +870,7 @@ const logs = ref<Log[]>([]);
 const jobs = ref<Job[]>([]);
 const filterJobId = usePersistedRef<number | "">("bemby:logs:filterJobId", "");
 const showDevLogs = usePersistedRef<boolean>("bemby:logs:showDevLogs", false);
+const showRetired = usePersistedRef<boolean>("bemby:logs:showRetired", false);
 const offset = ref(0);
 
 const expandedId = ref<number | null>(null);
@@ -989,6 +1003,7 @@ async function load() {
     jobId: filterJobId.value === "" ? undefined : Number(filterJobId.value),
     limit: 50,
     offset: 0,
+    showRetired: showRetired.value,
   });
 }
 
@@ -998,8 +1013,19 @@ async function loadMore() {
     jobId: filterJobId.value === "" ? undefined : Number(filterJobId.value),
     limit: 50,
     offset: offset.value,
+    showRetired: showRetired.value,
   });
   logs.value.push(...more);
+}
+
+async function toggleRetire(log: Log) {
+  const result = await logsApi.retire(log.id);
+  // if we're not showing retired, remove the row immediately when it gets retired
+  if (!showRetired.value && result.retired) {
+    logs.value = logs.value.filter(l => l.id !== log.id);
+  } else {
+    log.retired = result.retired;
+  }
 }
 
 async function stopJob(log: Log) {
@@ -1131,6 +1157,10 @@ function fmtSeconds(s: number): string {
 <style scoped>
 .row-expanded td {
   background: #f0f4ff;
+}
+
+.row-retired td {
+  opacity: 0.45;
 }
 
 /* Emby detail panel */

@@ -178,6 +178,7 @@ export type Log = {
   ranAt: string;
   status: "success" | "failed" | "running";
   message: string | null;
+  retired: boolean;
   detail?: CheckinAttemptLog[] | EmbywatchLog[] | { steps: CustomStepLog[] } | null;
 };
 
@@ -266,11 +267,13 @@ export const templatesApi = {
 // ── Logs ─────────────────────────────────────────────────────────────────────
 
 export const logsApi = {
-  list: (params?: { jobId?: number; limit?: number; offset?: number }) =>
-    api.get<Log[]>("/logs", { params }).then((r) => r.data),
+  list: (params?: { jobId?: number; limit?: number; offset?: number; showRetired?: boolean }) =>
+    api.get<Log[]>("/logs", { params: { ...params, showRetired: params?.showRetired ? '1' : '0' } }).then((r) => r.data),
   getOne: (id: number) => api.get<Log>(`/logs/${id}`).then((r) => r.data),
   cancel: (id: number) =>
     api.post<{ message: string }>(`/logs/${id}/cancel`).then((r) => r.data),
+  retire: (id: number) =>
+    api.patch<{ retired: boolean }>(`/logs/${id}/retire`).then((r) => r.data),
 };
 
 // ── Status ────────────────────────────────────────────────────────────────────

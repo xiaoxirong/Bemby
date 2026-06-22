@@ -31,20 +31,19 @@ router.get('/:id', (req, res) => {
 });
 
 router.get('/', (req, res) => {
-  const { jobId, limit = '50', offset = '0' } = req.query as Record<string, string>;
+  const { jobId, limit = '50', offset = '0', showRetired = '0' } = req.query as Record<string, string>;
 
+  const conditions: string[] = [];
   const params: (string | number)[] = [];
-  let where = '';
 
-  if (jobId) {
-    where = 'WHERE l.job_id = ?';
-    params.push(Number(jobId));
-  }
+  if (jobId) { conditions.push('l.job_id = ?'); params.push(Number(jobId)); }
+  if (showRetired !== '1') { conditions.push('l.retired = 0'); }
 
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   params.push(Number(limit), Number(offset));
 
   const rows = db.prepare(`
-    SELECT l.id, l.job_id, l.ran_at, l.status, l.message,
+    SELECT l.id, l.job_id, l.ran_at, l.status, l.message, l.retired,
            j.name AS job_name, j.job_type,
            a.name AS account_name
     FROM job_logs l
@@ -64,7 +63,17 @@ router.get('/', (req, res) => {
     ranAt: r.ran_at,
     status: r.status,
     message: r.message,
+    retired: r.retired === 1,
   })));
+});
+
+router.patch('/:id/retire', (req, res) => {
+  const id = Number(req.params.id);
+  const row = db.prepare('SELECT retired FROM job_logs WHERE id = ?').get(id) as { retired: number } | undefined;
+  if (!row) { res.status(404).json({ error: 'Not found' }); return; }
+  const newVal = row.retired ? 0 : 1;
+  db.prepare('UPDATE job_logs SET retired = ? WHERE id = ?').run(newVal, id);
+  res.json({ retired: newVal === 1 });
 });
 
 router.post('/:id/cancel', (req, res) => {

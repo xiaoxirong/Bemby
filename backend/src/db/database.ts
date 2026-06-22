@@ -92,6 +92,7 @@ try {
 try { db.exec("ALTER TABLE jobs ADD COLUMN start_command TEXT NOT NULL DEFAULT '/start'"); } catch {}
 try { db.exec("ALTER TABLE jobs ADD COLUMN checkin_button TEXT NOT NULL DEFAULT '签到'"); } catch {}
 try { db.exec('ALTER TABLE job_logs ADD COLUMN detail TEXT'); } catch {}
+try { db.exec('ALTER TABLE job_logs ADD COLUMN retired INTEGER NOT NULL DEFAULT 0'); } catch {}
 try { db.exec('ALTER TABLE jobs ADD COLUMN template_id INTEGER REFERENCES job_templates(id) ON DELETE SET NULL'); } catch {}
 
 db.exec(`
