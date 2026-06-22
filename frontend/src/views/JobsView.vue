@@ -105,16 +105,32 @@
         <div class="modal-body">
         <div v-if="formError" class="error-msg">{{ formError }}</div>
 
-        <!-- Template selector -->
-        <div v-if="templates.length" class="form-group">
-          <label class="form-label">{{ t('templates.labelTemplate') }}</label>
-          <select v-model="form.templateId" class="form-select" @change="onTemplateChange">
-            <option :value="null">{{ t('templates.noTemplate') }}</option>
-            <option v-for="tpl in templates" :key="tpl.id" :value="tpl.id">{{ tpl.name }}</option>
-          </select>
+        <!-- Template selector + Enabled inline -->
+        <div v-if="templates.length" style="display:flex;gap:12px;align-items:flex-end;margin-bottom:14px">
+          <div style="flex:1">
+            <label class="form-label">{{ t('templates.labelTemplate') }}</label>
+            <select v-model="form.templateId" class="form-select" @change="onTemplateChange">
+              <option :value="null">{{ t('templates.noTemplate') }}</option>
+              <option v-for="tpl in templates" :key="tpl.id" :value="tpl.id">{{ tpl.name }}</option>
+            </select>
+          </div>
+          <div style="padding-bottom:9px;white-space:nowrap">
+            <label class="form-check">
+              <input v-model="form.enabled" type="checkbox" />
+              <span>{{ t('jobs.labelEnabled') }}</span>
+            </label>
+          </div>
         </div>
 
-        <!-- Template summary (shown instead of config fields when linked) -->
+        <!-- Enabled standalone (no templates configured) -->
+        <div v-else style="margin-bottom:14px">
+          <label class="form-check">
+            <input v-model="form.enabled" type="checkbox" />
+            <span>{{ t('jobs.labelEnabled') }}</span>
+          </label>
+        </div>
+
+        <!-- Template summary -->
         <div v-if="form.templateId && linkedTemplate" class="template-summary-card">
           <div class="template-summary-row">
             <span :class="jobTypeBadge(linkedTemplate.jobType)">{{ t(`logs.jobType.${linkedTemplate.jobType}`) }}</span>
@@ -122,15 +138,7 @@
           </div>
         </div>
 
-        <!-- Enabled -->
-        <div style="margin-bottom:14px">
-          <label class="form-check">
-            <input v-model="form.enabled" type="checkbox" />
-            <span>{{ t('jobs.labelEnabled') }}</span>
-          </label>
-        </div>
-
-        <!-- Job Name (always) + Job Type (only when no template) -->
+        <!-- Name + Type (no template) | Name + Account (template, checkin/custom) -->
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">{{ t('jobs.labelName') }} <span style="color:#e63946">*</span></label>
@@ -144,10 +152,17 @@
               <option value="custom">Custom (自定义)</option>
             </select>
           </div>
+          <div v-if="form.templateId && (form.jobType === 'checkin' || form.jobType === 'custom')" class="form-group">
+            <label class="form-label">{{ t('jobs.labelAccount') }} <span style="color:#e63946">*</span></label>
+            <select v-model="form.accountId" class="form-select">
+              <option :value="null" disabled>{{ t('jobs.selectAccount') }}</option>
+              <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
+            </select>
+          </div>
         </div>
 
-        <!-- Check-in: Account (always) + Bot Username (no template only) -->
-        <div v-if="form.jobType === 'checkin'" class="form-row">
+        <!-- Check-in: Account + Bot (no template only — when template, account is in the row above) -->
+        <div v-if="form.jobType === 'checkin' && !form.templateId" class="form-row">
           <div class="form-group">
             <label class="form-label">{{ t('jobs.labelAccount') }} <span style="color:#e63946">*</span></label>
             <select v-model="form.accountId" class="form-select">
@@ -155,7 +170,7 @@
               <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
             </select>
           </div>
-          <div v-if="!form.templateId" class="form-group">
+          <div class="form-group">
             <label class="form-label">{{ t('jobs.labelBot') }} <span style="color:#e63946">*</span></label>
             <input v-model.trim="form.botUsername" class="form-input" placeholder="SomeBotUsername" />
           </div>
@@ -234,9 +249,9 @@
           </select>
         </div>
 
-        <!-- Custom: account (always) + target bot and config (hidden when template controls them) -->
+        <!-- Custom: Account + Bot (no template — when template, account is in the Name row above) -->
         <template v-if="form.jobType === 'custom'">
-          <div class="form-row">
+          <div v-if="!form.templateId" class="form-row">
             <div class="form-group">
               <label class="form-label">{{ t('jobs.labelAccount') }} <span style="color:#e63946">*</span></label>
               <select v-model="form.accountId" class="form-select">
@@ -244,7 +259,7 @@
                 <option v-for="a in accounts" :key="a.id" :value="a.id">{{ a.name }}</option>
               </select>
             </div>
-            <div v-if="!form.templateId" class="form-group">
+            <div class="form-group">
               <label class="form-label">{{ t('jobs.custom.labelTarget') }} <span style="color:#e63946">*</span></label>
               <input v-model.trim="form.botUsername" class="form-input" placeholder="BotUsername" />
             </div>
@@ -653,8 +668,8 @@ const form = reactive({
   accountId: null as number | null,
   jobType: 'checkin' as 'checkin' | 'embywatch' | 'custom',
   botUsername: '',
-  scheduleWindowStart: 1400,
-  scheduleWindowEnd: 1600,
+  scheduleWindowStart: 1000,
+  scheduleWindowEnd: 2200,
   timezone: 'Australia/Sydney',
   replyTimeoutMs: 40000,
   retryMax: 5,
@@ -862,7 +877,7 @@ function openAdd() {
   Object.assign(form, {
     name: '', accountId: accounts.value[0]?.id ?? null,
     jobType: 'checkin', botUsername: '',
-    scheduleWindowStart: 1400, scheduleWindowEnd: 1600,
+    scheduleWindowStart: 1000, scheduleWindowEnd: 2200,
     timezone: settings.value?.default_timezone ?? 'Australia/Sydney',
     replyTimeoutMs: 40000,
     retryMax: Number(settings.value?.default_max_retry ?? 5),

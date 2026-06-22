@@ -2,7 +2,10 @@
   <div>
     <div class="page-header">
       <h2 class="page-title">{{ t('templates.title') }}</h2>
-      <button class="btn btn-primary" @click="openAdd"><i class="fa-solid fa-plus"></i> {{ t('templates.addBtn') }}</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" @click="openImport"><i class="fa-solid fa-file-import"></i> {{ t('templates.importBtn') }}</button>
+        <button class="btn btn-primary" @click="openAdd"><i class="fa-solid fa-plus"></i> {{ t('templates.addBtn') }}</button>
+      </div>
     </div>
 
     <div class="card">
@@ -28,6 +31,9 @@
               <td class="col-hide-mobile">{{ tpl.linkedJobCount ?? 0 }}</td>
               <td>
                 <div class="actions hide-mobile">
+                  <button class="btn btn-sm btn-ghost btn-icon" :title="copiedTplId === tpl.id ? t('templates.shareCopied') : t('templates.shareBtn')" @click="shareTemplate(tpl)">
+                    <i :class="copiedTplId === tpl.id ? 'fa-solid fa-check' : 'fa-solid fa-share-nodes'"></i>
+                  </button>
                   <button class="btn btn-sm btn-ghost btn-icon" :title="t('common.edit')" @click="openEdit(tpl)"><i class="fa-solid fa-pen"></i></button>
                   <button class="btn btn-sm btn-danger btn-icon" :title="t('common.delete')" @click="remove(tpl.id)"><i class="fa-solid fa-trash"></i></button>
                 </div>
@@ -334,10 +340,39 @@
       </div>
     </div>
 
+    <!-- Import modal -->
+    <div v-if="showImport" class="modal-backdrop">
+      <div class="modal" style="width:480px">
+        <h3 class="modal-title">{{ t('templates.importTitle') }}</h3>
+        <div class="modal-body">
+          <div v-if="importError" class="error-msg">{{ importError }}</div>
+          <div class="form-group">
+            <label class="form-label">{{ t('templates.importLabel') }}</label>
+            <textarea
+              v-model="importJson"
+              class="form-input"
+              rows="10"
+              style="font-family:monospace;font-size:12px;resize:vertical"
+              :placeholder="t('templates.importPlaceholder')"
+            />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" @click="showImport = false"><i class="fa-solid fa-xmark"></i> {{ t('common.cancel') }}</button>
+          <button class="btn btn-primary" :disabled="importing" @click="doImport">
+            <i class="fa-solid fa-file-import"></i> {{ importing ? t('common.saving') : t('templates.importConfirm') }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Mobile action sheet -->
     <div v-if="actionMenuTpl" class="action-sheet-backdrop" @click="actionMenuTpl = null">
       <div class="action-sheet" @click.stop>
         <div class="action-sheet-header">{{ actionMenuTpl.name }}</div>
+        <button class="action-sheet-btn" @click="shareTemplate(actionMenuTpl!); actionMenuTpl = null">
+          <i class="fa-solid fa-share-nodes"></i> {{ t('templates.shareBtn') }}
+        </button>
         <button class="action-sheet-btn" @click="openEdit(actionMenuTpl!); actionMenuTpl = null">
           <i class="fa-solid fa-pen"></i> {{ t('common.edit') }}
         </button>
@@ -388,6 +423,12 @@ const editTarget = ref<JobTemplate | null>(null);
 const formError = ref('');
 const saving = ref(false);
 const actionMenuTpl = ref<JobTemplate | null>(null);
+
+const showImport = ref(false);
+const importJson = ref('');
+const importError = ref('');
+const importing = ref(false);
+const copiedTplId = ref<number | null>(null);
 
 const customActions = ref<CustomActionForm[]>([]);
 const customJobMaxRetries = ref(1);
@@ -730,6 +771,63 @@ async function remove(id: number) {
   if (!confirm(t('templates.confirmDelete'))) return;
   await templatesApi.delete(id);
   await loadTemplates();
+}
+
+const SHARE_KEYS: (keyof JobTemplate)[] = ['name', 'jobType', 'botUsername', 'timezone', 'replyTimeoutMs', 'retryMax', 'config', 'startCommand', 'checkinButton'];
+
+async function shareTemplate(tpl: JobTemplate) {
+  const text = JSON.stringify(Object.fromEntries(SHARE_KEYS.map(k => [k, tpl[k]])), null, 2);
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // fallback for HTTP (non-secure) contexts
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+  }
+  copiedTplId.value = tpl.id;
+  setTimeout(() => { copiedTplId.value = null; }, 1500);
+}
+
+function openImport() {
+  importJson.value = '';
+  importError.value = '';
+  showImport.value = true;
+}
+
+async function doImport() {
+  importError.value = '';
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(importJson.value);
+  } catch {
+    importError.value = t('templates.importError');
+    return;
+  }
+  if (!('name' in parsed) || !('jobType' in parsed)) {
+    importError.value = t('templates.importError');
+    return;
+  }
+  // config arrives as a string from the exported JSON; parse it to an object
+  // so the backend doesn't double-stringify it
+  if (typeof parsed.config === 'string') {
+    try { parsed.config = JSON.parse(parsed.config); } catch { /* leave as-is */ }
+  }
+  importing.value = true;
+  try {
+    await templatesApi.create(parsed as Partial<JobTemplate>);
+    showImport.value = false;
+    await loadTemplates();
+  } catch (err: any) {
+    importError.value = err.response?.data?.error ?? t('common.saveFailed');
+  } finally {
+    importing.value = false;
+  }
 }
 </script>
 
