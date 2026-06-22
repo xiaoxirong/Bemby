@@ -25,19 +25,19 @@
               <th style="width:36px">
                 <input type="checkbox" :checked="allSelected" :indeterminate="selectedIds.length > 0 && !allSelected" @change="toggleAll" />
               </th>
-              <th>{{ t('common.name') }}</th>
-              <th>{{ t('templates.colType') }}</th>
-              <th>{{ t('templates.colEnabled') }}</th>
-              <th class="col-hide-mobile">{{ t('templates.colBotUrl') }}</th>
-              <th class="col-hide-mobile">{{ t('templates.colLinkedJobs') }}</th>
+              <th class="th-sort" :class="sortKey === 'name' ? 'sort-active' : ''" @click="setSort('name')">{{ t('common.name') }} <span class="sort-icon">{{ sortIcon('name') }}</span></th>
+              <th class="th-sort" :class="sortKey === 'type' ? 'sort-active' : ''" @click="setSort('type')">{{ t('templates.colType') }} <span class="sort-icon">{{ sortIcon('type') }}</span></th>
+              <th class="th-sort" :class="sortKey === 'enabled' ? 'sort-active' : ''" @click="setSort('enabled')">{{ t('templates.colEnabled') }} <span class="sort-icon">{{ sortIcon('enabled') }}</span></th>
+              <th class="th-sort col-hide-mobile" :class="sortKey === 'botUrl' ? 'sort-active' : ''" @click="setSort('botUrl')">{{ t('templates.colBotUrl') }} <span class="sort-icon">{{ sortIcon('botUrl') }}</span></th>
+              <th class="th-sort col-hide-mobile" :class="sortKey === 'linkedJobs' ? 'sort-active' : ''" @click="setSort('linkedJobs')">{{ t('templates.colLinkedJobs') }} <span class="sort-icon">{{ sortIcon('linkedJobs') }}</span></th>
               <th>{{ t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!templates.length">
+            <tr v-if="!sortedTemplates.length">
               <td colspan="7" class="empty">{{ t('templates.noTemplates') }}</td>
             </tr>
-            <tr v-for="tpl in templates" :key="tpl.id">
+            <tr v-for="tpl in sortedTemplates" :key="tpl.id">
               <td><input type="checkbox" :checked="selectedIds.includes(tpl.id)" @change="toggleSelect(tpl.id)" /></td>
               <td>{{ tpl.name }}</td>
               <td><span :class="jobTypeBadge(tpl.jobType)">{{ t(`logs.jobType.${tpl.jobType}`) }}</span></td>
@@ -455,6 +455,7 @@
 import { ref, reactive, computed, onMounted } from 'vue';
 import { templatesApi, settingsApi, type JobTemplate, type Settings, type UAPreset, type Proxy, type EmbywatchConfig, type CustomConfig, type CustomAction } from '../api/client';
 import { t } from '../i18n';
+import { usePersistedRef } from '../composables/usePersistedRef';
 
 type CustomActionForm = {
   type: 'send_command' | 'wait_reply' | 'delay' | 'click_button' | 'enter_captcha';
@@ -498,13 +499,48 @@ const copiedTplId = ref<number | null>(null);
 
 const selectedIds = ref<number[]>([]);
 const sharedMulti = ref(false);
-const allSelected = computed(() => templates.value.length > 0 && selectedIds.value.length === templates.value.length);
+const allSelected = computed(() => sortedTemplates.value.length > 0 && sortedTemplates.value.every(t => selectedIds.value.includes(t.id)));
+
+const sortKey = usePersistedRef<string>('bemby:templates:sortKey', 'name');
+const sortDir = usePersistedRef<'asc' | 'desc'>('bemby:templates:sortDir', 'asc');
+
+function setSort(key: string) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortKey.value = key;
+    sortDir.value = 'asc';
+  }
+}
+
+function sortIcon(key: string): string {
+  if (sortKey.value !== key) return '↕';
+  return sortDir.value === 'asc' ? '↑' : '↓';
+}
+
+const sortedTemplates = computed(() => {
+  if (!sortKey.value) return templates.value;
+  return [...templates.value].sort((a, b) => {
+    let av: string | number, bv: string | number;
+    switch (sortKey.value) {
+      case 'name':       av = a.name.toLowerCase();    bv = b.name.toLowerCase(); break;
+      case 'type':       av = a.jobType;               bv = b.jobType; break;
+      case 'enabled':    av = a.enabled ? 0 : 1;       bv = b.enabled ? 0 : 1; break;
+      case 'botUrl':     av = a.botUsername.toLowerCase(); bv = b.botUsername.toLowerCase(); break;
+      case 'linkedJobs': av = a.linkedJobCount ?? 0;   bv = b.linkedJobCount ?? 0; break;
+      default: return 0;
+    }
+    if (av < bv) return sortDir.value === 'asc' ? -1 : 1;
+    if (av > bv) return sortDir.value === 'asc' ? 1 : -1;
+    return 0;
+  });
+});
 const confirmDeleteTplId = ref<number | null>(null);
 const confirmBulkDisableTpls = ref(false);
 const confirmBulkDeleteTpls = ref(false);
 
 function toggleAll() {
-  selectedIds.value = allSelected.value ? [] : templates.value.map(t => t.id);
+  selectedIds.value = allSelected.value ? [] : sortedTemplates.value.map(t => t.id);
 }
 function toggleSelect(id: number) {
   const idx = selectedIds.value.indexOf(id);
@@ -979,6 +1015,30 @@ async function doImport() {
 </script>
 
 <style scoped>
+.th-sort {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.th-sort:hover {
+  background: #f0f4ff;
+}
+
+.th-sort.sort-active {
+  color: #3730a3;
+}
+
+.sort-icon {
+  font-size: 10px;
+  color: #ccc;
+  margin-left: 2px;
+}
+
+.th-sort.sort-active .sort-icon {
+  color: #6366f1;
+}
+
 .custom-action-card {
   border: 1px solid #e5e7eb;
   border-radius: 8px;

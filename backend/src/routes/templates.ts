@@ -70,7 +70,7 @@ router.get('/', (_req, res) => {
     FROM job_templates t
     LEFT JOIN jobs j ON j.template_id = t.id
     GROUP BY t.id
-    ORDER BY t.id
+    ORDER BY t.name COLLATE NOCASE
   `).all() as (TemplateRow & { linked_job_count: number })[];
   res.json(rows.map(r => ({ ...rowToTemplate(r), linkedJobCount: r.linked_job_count })));
 });

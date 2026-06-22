@@ -73,7 +73,7 @@ router.get("/", (_req, res) => {
     SELECT j.*, a.name AS account_name
     FROM jobs j
     LEFT JOIN tg_accounts a ON j.account_id = a.id
-    ORDER BY j.id
+    ORDER BY j.name COLLATE NOCASE
   `,
     )
     .all() as JobRow[];
