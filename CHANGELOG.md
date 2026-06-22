@@ -4,6 +4,18 @@ All notable changes to Bemby are documented here.
 
 ---
 
+## v0.9.19
+
+### 中文
+
+- **模板单元测试** -- 新增模板 CRUD、模板同步至关联任务、删除级联、模板绑定与解绑、embywatch 配置锁例外以及运行时配置合并的后端单元测试
+
+### English
+
+- **Template unit tests** -- added backend unit tests covering template CRUD, sync to linked jobs, delete cascade, applying and removing templates, embywatch config-lock exception, and runtime config merge in the runner
+
+---
+
 ## v0.9.18
 
 ### 中文
