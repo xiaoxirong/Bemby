@@ -60,6 +60,7 @@ export type CustomAction =
 export type CustomConfig = {
   actions: CustomAction[];
   maxRetries?: number;
+  proxyId?: string;
 };
 
 export type CustomStepLog = {
@@ -106,6 +107,8 @@ export type EmbywatchConfig = {
   userAgent?: string;
   /** Mark the episode as watched after playback completes. Defaults to true. */
   markWatched?: boolean;
+  /** ID of a proxy from the settings proxies list, if any. */
+  proxyId?: string;
 };
 
 export type EmbywatchLog = {
@@ -119,6 +122,14 @@ export type EmbywatchLog = {
   endSeconds: number;
   watchedSeconds: number;
   markedWatched: boolean;
+};
+
+export type TgProxy = {
+  ip: string;
+  port: number;
+  socksType: 4 | 5;
+  username?: string;
+  password?: string;
 };
 
 export type JobLog = {

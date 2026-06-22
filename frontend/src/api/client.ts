@@ -44,6 +44,13 @@ export type EmbywatchConfig = {
   playDuration?: number;
   userAgent?: string;
   markWatched?: boolean;
+  proxyId?: string;
+};
+
+export type Proxy = {
+  id: string;
+  name: string;
+  url: string;
 };
 
 export type CustomAction =
@@ -56,6 +63,7 @@ export type CustomAction =
 export type CustomConfig = {
   actions: CustomAction[];
   maxRetries?: number;
+  proxyId?: string;
 };
 
 export type CustomStepLog = {
@@ -302,6 +310,7 @@ export type Settings = {
   notify_tg_username: string;
   notify_tg_events: string;
   ua_presets: string;
+  proxies: string;
 };
 
 export const settingsApi = {

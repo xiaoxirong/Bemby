@@ -343,6 +343,14 @@
             </div>
           </template>
 
+          <div v-if="proxiesList.length" class="form-group">
+            <label class="form-label">{{ t('jobs.labelProxy') }}</label>
+            <select v-model="tplProxyId" class="form-select">
+              <option value="">{{ t('jobs.proxyNone') }}</option>
+              <option v-for="p in proxiesList" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+          </div>
+
         </div><!-- end modal-body -->
         <div class="modal-footer">
           <button class="btn btn-ghost" @click="showForm = false"><i class="fa-solid fa-xmark"></i> {{ t('common.cancel') }}</button>
@@ -445,7 +453,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue';
-import { templatesApi, settingsApi, type JobTemplate, type Settings, type UAPreset, type EmbywatchConfig, type CustomConfig, type CustomAction } from '../api/client';
+import { templatesApi, settingsApi, type JobTemplate, type Settings, type UAPreset, type Proxy, type EmbywatchConfig, type CustomConfig, type CustomAction } from '../api/client';
 import { t } from '../i18n';
 
 type CustomActionForm = {
@@ -470,6 +478,9 @@ const templates = ref<JobTemplate[]>([]);
 const settings = ref<Settings | null>(null);
 const uaPresets = computed<UAPreset[]>(() => {
   try { return JSON.parse(settings.value?.ua_presets ?? '[]'); } catch { return []; }
+});
+const proxiesList = computed<Proxy[]>(() => {
+  try { return JSON.parse(settings.value?.proxies ?? '[]'); } catch { return []; }
 });
 const aiKeyMissing = computed(() => !settings.value?.ai_api_key);
 
@@ -520,6 +531,7 @@ const embyCfg = reactive<{ username: string; password: string; playDuration: num
   userAgent: '',
   markWatched: true,
 });
+const tplProxyId = ref('');
 const embyUaDropdown = ref('');
 const embyServer = reactive<{ protocol: 'https' | 'http'; host: string; port: number | '' }>({
   protocol: 'https',
@@ -570,6 +582,7 @@ function onJobTypeChange() {
   Object.assign(embyCfg, { username: '', password: '', playDuration: '', userAgent: '', markWatched: true });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
   embyUaDropdown.value = '';
+  tplProxyId.value = '';
   customActions.value = [];
   customJobMaxRetries.value = 1;
   btnAiHint.value = '';
@@ -627,6 +640,7 @@ function buildConfig(): EmbywatchConfig | CustomConfig | null {
     if (embyCfg.playDuration !== '') cfg.playDuration = Number(embyCfg.playDuration as string | number);
     if (embyCfg.userAgent) cfg.userAgent = embyCfg.userAgent;
     cfg.markWatched = embyCfg.markWatched;
+    if (tplProxyId.value) cfg.proxyId = tplProxyId.value;
     return cfg as EmbywatchConfig;
   }
   if (form.jobType === 'custom') {
@@ -663,8 +677,11 @@ function buildConfig(): EmbywatchConfig | CustomConfig | null {
       }),
     };
     if (customJobMaxRetries.value > 1) cfg.maxRetries = customJobMaxRetries.value;
+    if (tplProxyId.value) cfg.proxyId = tplProxyId.value;
     return cfg;
   }
+  // checkin: only proxy stored in template config
+  if (tplProxyId.value) return { actions: [], proxyId: tplProxyId.value };
   return null;
 }
 
@@ -693,6 +710,7 @@ function openAdd() {
   Object.assign(embyCfg, { username: '', password: '', playDuration: '', userAgent: '', markWatched: true });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
   embyUaDropdown.value = '';
+  tplProxyId.value = '';
   customActions.value = [];
   customJobMaxRetries.value = 1;
   setCmdState(''); setBtnState('');
@@ -713,6 +731,7 @@ function openEdit(tpl: JobTemplate) {
   setCmdState(tpl.startCommand === '/start' ? '' : (tpl.startCommand ?? ''));
   setBtnState(tpl.checkinButton === '签到' ? '' : (tpl.checkinButton ?? ''));
 
+  tplProxyId.value = '';
   if (tpl.jobType === 'embywatch') {
     const m = tpl.botUsername.match(/^(https?):\/\/([^:/]+)(?::(\d+))?/);
     Object.assign(embyServer, {
@@ -731,6 +750,7 @@ function openEdit(tpl: JobTemplate) {
           userAgent: c.userAgent ?? '',
           markWatched: c.markWatched !== false,
         });
+        tplProxyId.value = c.proxyId ?? '';
         setUaState(c.userAgent ?? '');
       } catch {
         Object.assign(embyCfg, { username: '', password: '', playDuration: '', userAgent: '', markWatched: true });
@@ -745,7 +765,8 @@ function openEdit(tpl: JobTemplate) {
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     if (tpl.config) {
       try {
-        const cfg = JSON.parse(tpl.config) as CustomConfig;
+        const cfg = JSON.parse(tpl.config) as CustomConfig & { proxyId?: string };
+        tplProxyId.value = cfg.proxyId ?? '';
         customJobMaxRetries.value = cfg.maxRetries ?? 1;
         customActions.value = cfg.actions.map((a: CustomAction) => {
           const base = defaultAction();
@@ -780,9 +801,16 @@ function openEdit(tpl: JobTemplate) {
       customJobMaxRetries.value = 1;
     }
   } else {
+    // checkin
     Object.assign(embyCfg, { username: '', password: '', playDuration: '', userAgent: '', markWatched: true });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     customActions.value = [];
+    if (tpl.config) {
+      try {
+        const cfg = JSON.parse(tpl.config) as { proxyId?: string };
+        tplProxyId.value = cfg.proxyId ?? '';
+      } catch { /* ignore */ }
+    }
   }
   formError.value = '';
   showForm.value = true;
@@ -980,5 +1008,71 @@ async function doImport() {
 
 .custom-action-params {
   padding-left: 26px;
+}
+
+.action-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+}
+
+.action-sheet {
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  width: 100%;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+}
+
+.action-sheet-header {
+  padding: 14px 20px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.action-sheet-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 15px 20px;
+  background: none;
+  border: none;
+  font-size: 15px;
+  color: #1a1a2e;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.action-sheet-btn:not(:disabled):active {
+  background: #f5f5f5;
+}
+
+.action-sheet-btn.danger {
+  color: #e63946;
+}
+
+.action-sheet-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.action-sheet-divider {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 4px 0;
+}
+
+.action-sheet-cancel {
+  color: #888;
+  font-weight: 500;
 }
 </style>

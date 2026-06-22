@@ -2,6 +2,7 @@ import { TelegramClient, Api, Logger } from 'telegram';
 import { db } from '../db/database';
 import { LogLevel } from 'telegram/extensions/Logger';
 import { StringSession } from 'telegram/sessions';
+import type { TgProxy } from '../types';
 import { NewMessage, NewMessageEvent, Raw } from 'telegram/events';
 
 export type CheckinAttemptLog = {
@@ -524,6 +525,7 @@ export async function runCheckin(
   attempt = 1,
   maxAiRetries = 0,
   signal?: AbortSignal,
+  proxy?: TgProxy,
 ): Promise<CheckinAttemptLog> {
   const attemptStart = Date.now();
   const log: CheckinAttemptLog = {
@@ -536,6 +538,7 @@ export async function runCheckin(
     connectionRetries: 5,
     autoReconnect: false,
     baseLogger: new Logger(LogLevel.NONE),
+    ...(proxy ? { proxy } : {}),
   });
 
   const t_connect = Date.now();

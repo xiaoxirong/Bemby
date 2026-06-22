@@ -1,8 +1,52 @@
-import type { Job, TgAccount, EmbywatchConfig, EmbywatchLog } from '../types';
+import type { Job, TgAccount, EmbywatchConfig, EmbywatchLog, TgProxy } from '../types';
 import { runCheckin, CheckinError, type CheckinAttemptLog } from './checkin';
 import { runEmbywatch } from './embywatch';
 import { runCustom, CustomJobError, type CustomJobLog } from './custom';
 import { db } from '../db/database';
+
+function resolveProxyUrl(jobConfig: string | null, templateId: number | null | undefined): string | undefined {
+  let proxyId: string | undefined;
+  if (templateId) {
+    try {
+      const row = db.prepare('SELECT config FROM job_templates WHERE id = ?').get(templateId) as { config: string | null } | undefined;
+      if (row?.config) {
+        let c = JSON.parse(row.config);
+        if (typeof c === 'string') c = JSON.parse(c);
+        proxyId = c?.proxyId;
+      }
+    } catch { /* ignore */ }
+  }
+  if (!proxyId && jobConfig) {
+    try {
+      let c = JSON.parse(jobConfig);
+      if (typeof c === 'string') c = JSON.parse(c);
+      proxyId = c?.proxyId;
+    } catch { /* ignore */ }
+  }
+  if (!proxyId) return undefined;
+  try {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('proxies') as { value: string } | undefined;
+    if (!row?.value) return undefined;
+    const list = JSON.parse(row.value) as Array<{ id: string; url: string }>;
+    return list.find(p => p.id === proxyId)?.url;
+  } catch { return undefined; }
+}
+
+function parseTgProxy(proxyUrl: string | undefined): TgProxy | undefined {
+  if (!proxyUrl) return undefined;
+  try {
+    const u = new URL(proxyUrl);
+    const proto = u.protocol.replace(':', '');
+    if (proto !== 'socks5' && proto !== 'socks4' && proto !== 'socks') return undefined;
+    return {
+      ip: u.hostname,
+      port: Number(u.port) || 1080,
+      socksType: proto === 'socks4' ? 4 : 5,
+      username: u.username || undefined,
+      password: u.password || undefined,
+    };
+  } catch { return undefined; }
+}
 
 export type JobDetailLog = CheckinAttemptLog | EmbywatchLog | CustomJobLog;
 
@@ -31,9 +75,12 @@ export async function runJob(
         case 'checkin': {
           if (!account) throw new Error('No account linked to this job');
           if (!account.sessionString) throw new Error('Account has no session -- authenticate first');
+          const checkinProxyUrl = resolveProxyUrl(job.config, job.templateId);
+          const checkinProxy = parseTgProxy(checkinProxyUrl);
           const log = await runCheckin(
             account.apiId, account.apiHash, account.sessionString,
             job.botUsername, job.replyTimeoutMs, job.startCommand, job.checkinButton, attempt, job.retryMax, signal,
+            checkinProxy,
           );
           detailLogs?.push(log);
           break;
@@ -60,9 +107,11 @@ export async function runJob(
           if (!account) throw new Error('No account linked to this job');
           if (!account.sessionString) throw new Error('Account has no session -- authenticate first');
           const rawCfg = JSON.parse(job.config ?? '{"actions":[]}');
+          const customProxyUrl = resolveProxyUrl(job.config, job.templateId);
+          const customProxy = parseTgProxy(customProxyUrl);
           const customLog = await runCustom(
             account.apiId, account.apiHash, account.sessionString,
-            job.botUsername, rawCfg, signal,
+            job.botUsername, rawCfg, signal, customProxy,
           );
           detailLogs?.push(customLog);
           break;

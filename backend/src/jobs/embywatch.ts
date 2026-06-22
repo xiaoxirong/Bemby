@@ -1,3 +1,4 @@
+import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { db } from '../db/database';
 import type { EmbywatchConfig, EmbywatchLog } from '../types';
 
@@ -25,22 +26,31 @@ function buildAuthHeader(deviceName: string, token?: string): string {
 async function embyRequest<T = any>(
   baseUrl: string,
   path: string,
-  opts: { method?: string; token?: string; ua: string; deviceName: string; body?: unknown }
+  opts: { method?: string; token?: string; ua: string; deviceName: string; body?: unknown; proxyUrl?: string }
 ): Promise<T> {
   const url = `${baseUrl.replace(/\/$/, '')}${path}`;
   const method = opts.method ?? 'GET';
 
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'User-Agent': opts.ua,
+    'X-Emby-Authorization': buildAuthHeader(opts.deviceName, opts.token),
+  };
+  const body = opts.body != null ? JSON.stringify(opts.body) : undefined;
+
   let res: Response;
   try {
-    res = await fetch(url, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': opts.ua,
-        'X-Emby-Authorization': buildAuthHeader(opts.deviceName, opts.token),
-      },
-      body: opts.body != null ? JSON.stringify(opts.body) : undefined,
-    });
+    if (opts.proxyUrl) {
+      // Use undici only when a proxy dispatcher is needed
+      res = await undiciFetch(url, {
+        method,
+        headers,
+        body,
+        dispatcher: new ProxyAgent(opts.proxyUrl),
+      } as Parameters<typeof undiciFetch>[1]) as unknown as Response;
+    } else {
+      res = await fetch(url, { method, headers, body });
+    }
   } catch (err: any) {
     // Network-level failure (ECONNREFUSED, ENOTFOUND, timeout, etc.)
     const cause = err?.cause?.message ?? err?.cause?.code ?? '';
@@ -66,11 +76,24 @@ export async function runEmbywatch(serverUrl: string, config: EmbywatchConfig): 
   const playDuration = config.playDuration ?? Number(getSetting('default_play_duration') ?? 300);
   const deviceName = getSetting('default_device_name') ?? 'Yamby';
 
+  // Resolve proxy URL from settings if proxyId is configured
+  let proxyUrl: string | undefined;
+  if (config.proxyId) {
+    try {
+      const raw = getSetting('proxies');
+      if (raw) {
+        const list = JSON.parse(raw) as Array<{ id: string; name: string; url: string }>;
+        proxyUrl = list.find(p => p.id === config.proxyId)?.url;
+      }
+    } catch { /* ignore bad JSON */ }
+  }
+
   // 1. Authenticate
   const auth = await embyRequest<any>(serverUrl, '/Users/AuthenticateByName', {
     method: 'POST',
     ua,
     deviceName,
+    proxyUrl,
     body: { Username: config.username, Pw: config.password },
   });
 
@@ -82,7 +105,7 @@ export async function runEmbywatch(serverUrl: string, config: EmbywatchConfig): 
   const items = await embyRequest<any>(
     serverUrl,
     `/Users/${userId}/Items?SortBy=Random&Limit=1&IncludeItemTypes=Episode,Movie&Recursive=true&Fields=MediaSources,RunTimeTicks`,
-    { ua, token, deviceName }
+    { ua, token, deviceName, proxyUrl }
   );
 
   if (!items.Items?.length) throw new Error('No playable items found on Emby server');
@@ -114,6 +137,7 @@ export async function runEmbywatch(serverUrl: string, config: EmbywatchConfig): 
     ua,
     token,
     deviceName,
+    proxyUrl,
     body: {
       ItemId: itemId,
       MediaSourceId: mediaSourceId,
@@ -136,6 +160,7 @@ export async function runEmbywatch(serverUrl: string, config: EmbywatchConfig): 
       ua,
       token,
       deviceName,
+      proxyUrl,
       body: {
         ItemId: itemId,
         MediaSourceId: mediaSourceId,
@@ -152,6 +177,7 @@ export async function runEmbywatch(serverUrl: string, config: EmbywatchConfig): 
     ua,
     token,
     deviceName,
+    proxyUrl,
     body: {
       ItemId: itemId,
       MediaSourceId: mediaSourceId,
@@ -169,6 +195,7 @@ export async function runEmbywatch(serverUrl: string, config: EmbywatchConfig): 
         ua,
         token,
         deviceName,
+        proxyUrl,
       });
       markedWatched = true;
     } catch (e) {

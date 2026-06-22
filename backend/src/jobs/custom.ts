@@ -1,6 +1,7 @@
 import { TelegramClient, Api, Logger } from "telegram";
 import { LogLevel } from "telegram/extensions/Logger";
 import { StringSession } from "telegram/sessions";
+import type { TgProxy } from '../types';
 import { NewMessage, NewMessageEvent } from "telegram/events";
 import {
   expandCommand,
@@ -171,6 +172,7 @@ export async function runCustom(
   botUsername: string,
   config: CustomConfig,
   signal?: AbortSignal,
+  proxy?: TgProxy,
 ): Promise<CustomJobLog> {
   const log: CustomJobLog = { steps: [] };
   const jobMaxRetries = config.maxRetries ?? 1;
@@ -183,6 +185,7 @@ export async function runCustom(
       connectionRetries: 5,
       autoReconnect: false,
       baseLogger: new Logger(LogLevel.NONE),
+      ...(proxy ? { proxy } : {}),
     },
   );
 

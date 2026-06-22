@@ -119,6 +119,8 @@ const zh = {
     startCommandHint: "支持占位符：{word:N} {WORD:N} {num:N} {alpha:N} {uuid}",
     labelMarkWatched: "播放后标记已看",
     markWatchedHint: "播放完成后，将该剧集标记为已看",
+    labelProxy: "代理",
+    proxyNone: "不使用代理",
     playbackRulesHint:
       "播放从剧集的随机 5–10% 位置开始，时长为设定时间加上 0–10% 的随机延长。",
     labelCheckinButton: "签到按钮文字",
@@ -304,6 +306,12 @@ const zh = {
     uaPresetValue: "用户代理字符串",
     addPreset: "添加",
     uaPresetDeleteTip: "删除",
+    proxiesSection: "代理服务器",
+    proxiesHint: "在模板中选择代理，用于无法直连的 Emby 服务器。",
+    proxyName: "名称",
+    proxyUrl: "URL（如 http://user:pass@host:port）",
+    addProxy: "添加",
+    proxyDeleteTip: "删除",
     saveBtn: "保存",
     aiSection: "AI 按钮识别",
     aiHint: "用于 {aiBtn} 功能，从内联键盘中自动识别签到按钮。",
@@ -490,6 +498,8 @@ const en: typeof zh = {
     labelMarkWatched: "Mark as watched after playback",
     markWatchedHint:
       "After playback completes, mark the episode as watched in Emby",
+    labelProxy: "Proxy",
+    proxyNone: "No proxy",
     playbackRulesHint:
       "Playback starts at a random 5–10% into the episode. Duration is the set time plus 0–10% random extra.",
     labelCheckinButton: "Check-in Button Text",
@@ -676,6 +686,12 @@ const en: typeof zh = {
     uaPresetValue: "User Agent string",
     addPreset: "Add",
     uaPresetDeleteTip: "Delete",
+    proxiesSection: "Proxies",
+    proxiesHint: "Select a proxy on a template to reach Emby servers that are blocked from direct access.",
+    proxyName: "Name",
+    proxyUrl: "URL (e.g. http://user:pass@host:port)",
+    addProxy: "Add",
+    proxyDeleteTip: "Delete",
     saveBtn: "Save",
     aiSection: "AI Button Detection",
     aiHint:

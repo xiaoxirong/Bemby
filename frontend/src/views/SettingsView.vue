@@ -239,6 +239,36 @@
         </div>
       </div>
 
+      <!-- Proxies -->
+      <div class="card s-col-6">
+        <div class="card-body">
+          <div class="card-section-title">{{ t("settings.proxiesSection") }}</div>
+          <p style="font-size:12px;color:#888;margin:0 0 12px">{{ t("settings.proxiesHint") }}</p>
+
+          <div v-if="proxiesMsg" class="success-msg">{{ proxiesMsg }}</div>
+          <div v-if="proxiesError" class="error-msg">{{ proxiesError }}</div>
+
+          <div v-for="(p, i) in proxies" :key="p.id" class="ua-preset-row">
+            <span class="ua-preset-name">{{ p.name }}</span>
+            <span class="ua-preset-value">{{ p.url }}</span>
+            <button class="btn btn-sm btn-ghost ua-preset-del" :title="t('settings.proxyDeleteTip')" @click="removeProxy(i)">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          <div class="ua-preset-add">
+            <input v-model.trim="newProxyName" class="form-input" style="flex:0 0 140px" :placeholder="t('settings.proxyName')" @keyup.enter="addProxy" />
+            <input v-model.trim="newProxyUrl" class="form-input" style="flex:1;min-width:0" :placeholder="t('settings.proxyUrl')" @keyup.enter="addProxy" />
+            <button class="btn btn-ghost btn-sm" :disabled="!newProxyName || !newProxyUrl" @click="addProxy">
+              <i class="fa-solid fa-plus"></i> {{ t("settings.addProxy") }}
+            </button>
+          </div>
+
+          <button class="btn btn-primary" style="margin-top:14px" :disabled="proxiesSaving" @click="saveProxies">
+            <i class="fa-solid fa-floppy-disk"></i> {{ proxiesSaving ? t("common.saving") : t("settings.saveBtn") }}
+          </button>
+        </div>
+      </div>
+
       <!-- Import / Export -->
       <div class="card s-col-6">
         <div class="card-body">
@@ -462,7 +492,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from "vue";
 import { settingsApi, authApi, dataApi, aiSuppliersApi } from "../api/client";
-import type { ExportPayload, UAPreset, AiSupplier } from "../api/client";
+import type { ExportPayload, UAPreset, AiSupplier, Proxy } from "../api/client";
 import { t } from "../i18n";
 
 const timezones = [
@@ -524,6 +554,13 @@ const uaPresets = ref<UAPreset[]>([]);
 const newPresetName = ref("");
 const newPresetValue = ref("");
 
+const proxies = ref<Proxy[]>([]);
+const newProxyName = ref("");
+const newProxyUrl = ref("");
+const proxiesSaving = ref(false);
+const proxiesMsg = ref("");
+const proxiesError = ref("");
+
 const notifyEventOptions = computed(() => [
   { value: "failed", label: t("settings.notifyEventFailed") },
   { value: "success", label: t("settings.notifyEventSuccess") },
@@ -548,6 +585,7 @@ onMounted(async () => {
     form.check_daily_run = s.check_daily_run !== "false";
     form.default_ua = s.default_ua ?? "";
     try { uaPresets.value = JSON.parse(s.ua_presets ?? "[]"); } catch { uaPresets.value = []; }
+    try { proxies.value = JSON.parse(s.proxies ?? "[]"); } catch { proxies.value = []; }
     form.default_play_duration = Number(s.default_play_duration ?? 300);
     form.default_device_name = s.default_device_name ?? "Mac";
     form.ai_model = s.ai_model ?? "";
@@ -602,6 +640,33 @@ function removeUaPreset(index: number) {
   // If the default UA matches the removed preset, clear it
   if (form.default_ua === uaPresets.value[index]?.value) form.default_ua = "";
   uaPresets.value.splice(index, 1);
+}
+
+function addProxy() {
+  const name = newProxyName.value.trim();
+  const url = newProxyUrl.value.trim();
+  if (!name || !url) return;
+  proxies.value.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2), name, url });
+  newProxyName.value = "";
+  newProxyUrl.value = "";
+}
+
+function removeProxy(index: number) {
+  proxies.value.splice(index, 1);
+}
+
+async function saveProxies() {
+  proxiesMsg.value = "";
+  proxiesError.value = "";
+  proxiesSaving.value = true;
+  try {
+    await settingsApi.update({ proxies: JSON.stringify(proxies.value) });
+    proxiesMsg.value = t("settings.saved");
+  } catch (err: any) {
+    proxiesError.value = err.response?.data?.error ?? t("settings.saveFailed");
+  } finally {
+    proxiesSaving.value = false;
+  }
 }
 
 async function saveEmby() {
