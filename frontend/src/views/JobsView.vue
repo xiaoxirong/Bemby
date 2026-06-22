@@ -806,7 +806,8 @@ function applyTemplate(tpl: JobTemplate) {
       try {
         let c = JSON.parse(tpl.config) as EmbywatchConfig | string;
         if (typeof c === 'string') c = JSON.parse(c) as EmbywatchConfig;
-        Object.assign(embyCfg, { username: c.username ?? '', password: c.password ?? '', playDuration: c.playDuration ?? '', userAgent: c.userAgent ?? '', markWatched: c.markWatched !== false });
+        // username/password are job-specific; only apply playback settings from template
+        Object.assign(embyCfg, { playDuration: c.playDuration ?? '', userAgent: c.userAgent ?? '', markWatched: c.markWatched !== false });
         setUaState(c.userAgent ?? '');
       } catch { /* ignore */ }
     }
@@ -850,8 +851,7 @@ function onTemplateChange() {
   const tpl = linkedTemplate.value;
   if (!tpl) return;
   applyTemplate(tpl);
-  // Reset account when job type changes via template
-  form.accountId = (form.jobType === 'checkin' || form.jobType === 'custom') ? (accounts.value[0]?.id ?? null) : null;
+  // accountId is job-specific — never reset it when a template is assigned
 }
 
 async function loadJobs() {
