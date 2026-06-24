@@ -1,4 +1,5 @@
-import { TelegramClient, Api } from 'telegram';
+import { TelegramClient, Api, Logger } from 'telegram';
+import { LogLevel } from 'telegram/extensions/Logger';
 import { StringSession } from 'telegram/sessions';
 import type { TgProxy } from '../types';
 
@@ -23,7 +24,7 @@ export async function requestCode(accountId: number, apiId: number, apiHash: str
     new StringSession(''),
     apiId,
     apiHash,
-    { connectionRetries: 3, ...(proxy ? { proxy } : {}) },
+    { connectionRetries: 3, baseLogger: new Logger(LogLevel.NONE), ...(proxy ? { proxy } : {}) },
   );
   await client.connect();
 
