@@ -1415,15 +1415,35 @@ async function loadDialogs() {
   if (!selectedAccountId.value) return;
   loadingDialogs.value = true;
   dialogError.value = "";
+  const accountId = selectedAccountId.value;
   try {
-    [dialogs.value, tgFolders.value] = await Promise.all([
-      tgClientApi.dialogs(selectedAccountId.value),
-      tgClientApi.folders(selectedAccountId.value).catch(() => []),
+    // Load first 30 and folders in parallel -- show UI immediately
+    const [firstBatch, folders] = await Promise.all([
+      tgClientApi.dialogs(accountId, { limit: 30 }),
+      tgClientApi.folders(accountId).catch(() => []),
     ]);
+    // Only apply if the account hasn't changed while we were waiting
+    if (selectedAccountId.value !== accountId) return;
+    dialogs.value = firstBatch;
+    tgFolders.value = folders;
+    loadingDialogs.value = false;
+
+    // Background: load full list and merge in
+    tgClientApi.dialogs(accountId, { limit: 200 }).then((allDialogs) => {
+      if (selectedAccountId.value !== accountId) return;
+      // Merge: keep any local unread-zero overrides already applied
+      const localZeroed = new Set(
+        dialogs.value.filter((d) => d.unreadCount === 0).map((d) => d.chatId),
+      );
+      dialogs.value = allDialogs.map((d) =>
+        localZeroed.has(d.chatId) ? { ...d, unreadCount: 0 } : d,
+      );
+    }).catch(() => {
+      // Background load failing is non-fatal; first batch is already visible
+    });
   } catch (e: any) {
     dialogError.value =
       e?.response?.data?.error ?? e.message ?? "Failed to load chats";
-  } finally {
     loadingDialogs.value = false;
   }
 }

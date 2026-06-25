@@ -34,12 +34,13 @@ router.get("/:accountId/folders", async (req, res) => {
   }
 });
 
-// GET /:accountId/dialogs
+// GET /:accountId/dialogs?limit=
 router.get("/:accountId/dialogs", async (req, res) => {
   const accountId = Number(req.params.accountId);
+  const limit = Math.min(Number(req.query.limit ?? 200), 200);
   try {
     const entry = await getLiveClient(accountId);
-    const dialogs = await loadDialogs(entry);
+    const dialogs = await loadDialogs(entry, limit);
     res.json(dialogs);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

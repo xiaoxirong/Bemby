@@ -249,8 +249,11 @@ export async function getLiveClient(accountId: number): Promise<LiveEntry> {
 }
 
 // Load all dialogs into the entity cache
-export async function loadDialogs(entry: LiveEntry): Promise<TgDialogItem[]> {
-  const dialogs = await entry.client.getDialogs({ limit: 200 });
+export async function loadDialogs(
+  entry: LiveEntry,
+  limit = 200,
+): Promise<TgDialogItem[]> {
+  const dialogs = await entry.client.getDialogs({ limit });
   const result: TgDialogItem[] = [];
 
   for (const d of dialogs) {
