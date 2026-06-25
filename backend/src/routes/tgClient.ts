@@ -8,6 +8,11 @@ import {
   addContact,
   searchPeers,
   fetchPhoto,
+  fetchAvatar,
+  getEntityDetails,
+  muteDialog,
+  pinDialog,
+  clickButton,
   subscribeToMessages,
   getFolders,
 } from '../tg/liveClient';
@@ -103,6 +108,78 @@ router.get('/:accountId/search', async (req, res) => {
     const entry = await getLiveClient(accountId);
     const results = await searchPeers(entry, q);
     res.json(results);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /:accountId/mute/:chatId -- mute (muteSecs>0) or unmute (muteSecs=0)
+router.post('/:accountId/mute/:chatId', async (req, res) => {
+  const accountId = Number(req.params.accountId);
+  const chatId = decodeURIComponent(req.params.chatId);
+  const { muteSecs = 0 } = req.body as { muteSecs?: number };
+  try {
+    const entry = await getLiveClient(accountId);
+    await muteDialog(entry, chatId, Number(muteSecs));
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /:accountId/pin/:chatId -- pin or unpin
+router.post('/:accountId/pin/:chatId', async (req, res) => {
+  const accountId = Number(req.params.accountId);
+  const chatId = decodeURIComponent(req.params.chatId);
+  const { pinned = true } = req.body as { pinned?: boolean };
+  try {
+    const entry = await getLiveClient(accountId);
+    await pinDialog(entry, chatId, Boolean(pinned));
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /:accountId/avatar/:chatId -- profile photo
+router.get('/:accountId/avatar/:chatId', async (req, res) => {
+  const accountId = Number(req.params.accountId);
+  const chatId = decodeURIComponent(req.params.chatId);
+  try {
+    const entry = await getLiveClient(accountId);
+    const buf = await fetchAvatar(entry, chatId);
+    if (!buf) { res.status(404).end(); return; }
+    res.set('Content-Type', 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.send(buf);
+  } catch {
+    res.status(404).end();
+  }
+});
+
+// GET /:accountId/profile/:chatId -- full entity details
+router.get('/:accountId/profile/:chatId', async (req, res) => {
+  const accountId = Number(req.params.accountId);
+  const chatId = decodeURIComponent(req.params.chatId);
+  try {
+    const entry = await getLiveClient(accountId);
+    res.json(await getEntityDetails(entry, chatId));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /:accountId/messages/:chatId/:msgId/button -- trigger inline keyboard callback
+router.post('/:accountId/messages/:chatId/:msgId/button', async (req, res) => {
+  const accountId = Number(req.params.accountId);
+  const chatId = decodeURIComponent(req.params.chatId);
+  const msgId = Number(req.params.msgId);
+  const { data } = req.body as { data?: string };
+  if (!data) { res.status(400).json({ error: 'data is required' }); return; }
+  try {
+    const entry = await getLiveClient(accountId);
+    const result = await clickButton(entry, chatId, msgId, data);
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

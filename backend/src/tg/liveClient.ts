@@ -11,6 +11,12 @@ export type TgLiveMessage = {
   message: TgMsgPayload;
 };
 
+export type TgButton = {
+  text: string;
+  data: string | null; // base64-encoded callback data
+  url: string | null;
+};
+
 export type TgMsgPayload = {
   id: number;
   text: string;
@@ -20,7 +26,7 @@ export type TgMsgPayload = {
   fromName: string | null;
   hasPhoto: boolean;
   hasDocument: boolean;
-  buttons: string[][] | null;
+  buttons: TgButton[][] | null;
 };
 
 export type TgDialogItem = {
@@ -79,11 +85,15 @@ function entityName(entity: Api.User | Api.Chat | Api.Channel): string {
   return (entity as any).title ?? (entity as any).username ?? 'Unknown';
 }
 
-function extractButtons(msg: Api.Message): string[][] | null {
+function extractButtons(msg: Api.Message): TgButton[][] | null {
   if (!msg.replyMarkup) return null;
   if (msg.replyMarkup instanceof Api.ReplyInlineMarkup) {
     return msg.replyMarkup.rows.map(row =>
-      row.buttons.map(btn => ('text' in btn ? (btn as any).text as string : ''))
+      row.buttons.map((btn: any): TgButton => ({
+        text: btn.text ?? '',
+        data: btn.data ? Buffer.from(btn.data).toString('base64') : null,
+        url: btn.url ?? null,
+      }))
     );
   }
   return null;
@@ -363,6 +373,74 @@ export async function fetchPhoto(entry: LiveEntry, chatId: string, msgId: number
   return Buffer.from(data as Uint8Array);
 }
 
+export async function fetchAvatar(entry: LiveEntry, chatId: string): Promise<Buffer | null> {
+  await ensureEntityCached(entry, chatId);
+  const entity = entry.entityCache.get(chatId);
+  if (!entity) return null;
+  try {
+    const data = await entry.client.downloadProfilePhoto(entity as any);
+    if (!data) return null;
+    if (Buffer.isBuffer(data)) return data;
+    if (typeof data === 'string') return Buffer.from(data, 'binary');
+    return Buffer.from(data as Uint8Array);
+  } catch {
+    return null;
+  }
+}
+
+export type TgProfileInfo = {
+  chatId: string;
+  name: string;
+  type: 'user' | 'bot' | 'group' | 'channel';
+  username: string | null;
+  phone: string | null;
+  bio: string | null;
+  memberCount: number | null;
+};
+
+export async function getEntityDetails(entry: LiveEntry, chatId: string): Promise<TgProfileInfo> {
+  await ensureEntityCached(entry, chatId);
+  const entity = entry.entityCache.get(chatId);
+  if (!entity) throw new Error('Entity not found');
+
+  const type: TgProfileInfo['type'] =
+    entity instanceof Api.User
+      ? ((entity as any).bot ? 'bot' : 'user')
+      : entity instanceof Api.Channel
+        ? ((entity as any).megagroup ? 'group' : 'channel')
+        : 'group';
+
+  let bio: string | null = null;
+  let memberCount: number | null = null;
+
+  try {
+    if (entity instanceof Api.User) {
+      const full = await entry.client.invoke(new Api.users.GetFullUser({ id: entity as any }));
+      bio = (full as any).fullUser?.about ?? null;
+    } else if (entity instanceof Api.Channel) {
+      const full = await entry.client.invoke(new Api.channels.GetFullChannel({ channel: entity as any }));
+      bio = (full as any).fullChat?.about ?? null;
+      memberCount = (full as any).fullChat?.participantsCount ?? null;
+    } else {
+      const full = await entry.client.invoke(new Api.messages.GetFullChat({ chatId: (entity as any).id as any }));
+      bio = (full as any).fullChat?.about ?? null;
+      memberCount = (full as any).fullChat?.participants?.participants?.length ?? null;
+    }
+  } catch {
+    // Full details unavailable -- basic info from entity cache is still returned
+  }
+
+  return {
+    chatId,
+    name: entityName(entity),
+    type,
+    username: (entity as any).username ?? null,
+    phone: (entity as any).phone ?? null,
+    bio,
+    memberCount,
+  };
+}
+
 export type TgFolderItem = {
   id: number;
   title: string;
@@ -384,6 +462,47 @@ function inputPeerToChatId(peer: any): string {
   if (peer.channelId !== undefined) return `c${peer.channelId}`;
   if (peer.chatId !== undefined) return `g${peer.chatId}`;
   return '';
+}
+
+// Mute a dialog -- pass muteSecs=0 to unmute
+export async function muteDialog(entry: LiveEntry, chatId: string, muteSecs: number): Promise<void> {
+  await ensureEntityCached(entry, chatId);
+  const entity = entry.entityCache.get(chatId);
+  if (!entity) throw new Error('Entity not found');
+
+  let peer: any;
+  if (entity instanceof Api.User) {
+    peer = new Api.InputNotifyPeer({ peer: new Api.InputPeerUser({ userId: (entity as any).id, accessHash: (entity as any).accessHash ?? BigInt(0) as any }) });
+  } else if (entity instanceof Api.Channel) {
+    peer = new Api.InputNotifyPeer({ peer: new Api.InputPeerChannel({ channelId: (entity as any).id, accessHash: (entity as any).accessHash ?? BigInt(0) as any }) });
+  } else {
+    peer = new Api.InputNotifyPeer({ peer: new Api.InputPeerChat({ chatId: (entity as any).id as any }) });
+  }
+
+  await entry.client.invoke(new Api.account.UpdateNotifySettings({
+    peer,
+    settings: new Api.InputPeerNotifySettings({
+      muteUntil: muteSecs === 0 ? 0 : Math.floor(Date.now() / 1000) + muteSecs,
+    }),
+  }));
+}
+
+// Pin or unpin a dialog in the user's dialog list
+export async function pinDialog(entry: LiveEntry, chatId: string, pinned: boolean): Promise<void> {
+  await ensureEntityCached(entry, chatId);
+  const entity = entry.entityCache.get(chatId);
+  if (!entity) throw new Error('Entity not found');
+
+  let peer: any;
+  if (entity instanceof Api.User) {
+    peer = new Api.InputDialogPeer({ peer: new Api.InputPeerUser({ userId: (entity as any).id, accessHash: (entity as any).accessHash ?? BigInt(0) as any }) });
+  } else if (entity instanceof Api.Channel) {
+    peer = new Api.InputDialogPeer({ peer: new Api.InputPeerChannel({ channelId: (entity as any).id, accessHash: (entity as any).accessHash ?? BigInt(0) as any }) });
+  } else {
+    peer = new Api.InputDialogPeer({ peer: new Api.InputPeerChat({ chatId: (entity as any).id as any }) });
+  }
+
+  await entry.client.invoke(new Api.messages.ToggleDialogPin({ peer, pinned }));
 }
 
 export async function getFolders(entry: LiveEntry): Promise<TgFolderItem[]> {
@@ -410,6 +529,37 @@ export async function getFolders(entry: LiveEntry): Promise<TgFolderItem[]> {
   } catch {
     return [];
   }
+}
+
+export type TgButtonResult = {
+  alert: boolean;
+  message: string | null;
+  url: string | null;
+};
+
+export async function clickButton(
+  entry: LiveEntry,
+  chatId: string,
+  msgId: number,
+  data: string,
+): Promise<TgButtonResult> {
+  const { client } = entry;
+  await ensureEntityCached(entry, chatId);
+  const entity = entry.entityCache.get(chatId);
+  if (!entity) throw new Error('Chat not found');
+  const result = await client.invoke(
+    new Api.messages.GetBotCallbackAnswer({
+      peer: entity as any,
+      msgId,
+      data: Buffer.from(data, 'base64'),
+      game: false,
+    })
+  );
+  return {
+    alert: result.alert ?? false,
+    message: result.message ?? null,
+    url: result.url ?? null,
+  };
 }
 
 export function subscribeToMessages(accountId: number, handler: (msg: TgLiveMessage) => void): () => void {

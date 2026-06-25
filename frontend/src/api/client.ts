@@ -80,11 +80,27 @@ export type Proxy = {
 };
 
 export type CustomAction =
-  | { type: 'send_command'; content: string; maxRetries?: number }
-  | { type: 'wait_reply'; maxWaitMs: number; successContains?: string; failContains?: string; maxRetries?: number }
-  | { type: 'delay'; waitMs: number }
-  | { type: 'click_button'; button: string; maxRetries: number; maxWaitMs: number }
-  | { type: 'enter_captcha'; maxWaitMs: number; captchaLength?: number; maxRetries?: number };
+  | { type: "send_command"; content: string; maxRetries?: number }
+  | {
+      type: "wait_reply";
+      maxWaitMs: number;
+      successContains?: string;
+      failContains?: string;
+      maxRetries?: number;
+    }
+  | { type: "delay"; waitMs: number }
+  | {
+      type: "click_button";
+      button: string;
+      maxRetries: number;
+      maxWaitMs: number;
+    }
+  | {
+      type: "enter_captcha";
+      maxWaitMs: number;
+      captchaLength?: number;
+      maxRetries?: number;
+    };
 
 export type CustomConfig = {
   actions: CustomAction[];
@@ -115,7 +131,7 @@ export type CustomStepLog = {
   aiRetries?: string[];
   // Dev fields
   msgCount?: number;
-  responseSource?: 'edit' | 'new_message';
+  responseSource?: "edit" | "new_message";
   retryCount?: number;
   errorName?: string;
   /** 1-based job attempt number (only set when job maxRetries > 1) */
@@ -197,12 +213,11 @@ export type CheckinAttemptLog = {
   replyLatencyMs?: number;
   buttonClickMs?: number;
   buttonResponseMs?: number;
-  buttonResponseSource?: 'edit' | 'new_message';
+  buttonResponseSource?: "edit" | "new_message";
   totalMs?: number;
   replyTimeoutMs?: number;
   errorName?: string;
 };
-
 
 export type Log = {
   id: number;
@@ -214,7 +229,11 @@ export type Log = {
   status: "success" | "failed" | "running";
   message: string | null;
   retired: boolean;
-  detail?: CheckinAttemptLog[] | EmbywatchLog[] | { steps: CustomStepLog[] } | null;
+  detail?:
+    | CheckinAttemptLog[]
+    | EmbywatchLog[]
+    | { steps: CustomStepLog[] }
+    | null;
 };
 
 export type ScheduleStatus = {
@@ -262,8 +281,10 @@ export const accountsApi = {
       apiHash: string;
     },
   ) => api.post<Account>("/accounts", data).then((r) => r.data),
-  update: (id: number, data: Partial<Account> & { apiHash?: string; proxyId?: string | null }) =>
-    api.put<Account>(`/accounts/${id}`, data).then((r) => r.data),
+  update: (
+    id: number,
+    data: Partial<Account> & { apiHash?: string; proxyId?: string | null },
+  ) => api.put<Account>(`/accounts/${id}`, data).then((r) => r.data),
   delete: (id: number) => api.delete(`/accounts/${id}`),
   requestCode: (id: number) =>
     api
@@ -304,29 +325,54 @@ export type AvailableAccount = {
 };
 
 export const templatesApi = {
-  list: () => api.get<JobTemplate[]>('/templates').then((r) => r.data),
-  create: (data: Partial<JobTemplate>) => api.post<JobTemplate>('/templates', data).then((r) => r.data),
-  update: (id: number, data: Partial<JobTemplate>) => api.put<JobTemplate>(`/templates/${id}`, data).then((r) => r.data),
+  list: () => api.get<JobTemplate[]>("/templates").then((r) => r.data),
+  create: (data: Partial<JobTemplate>) =>
+    api.post<JobTemplate>("/templates", data).then((r) => r.data),
+  update: (id: number, data: Partial<JobTemplate>) =>
+    api.put<JobTemplate>(`/templates/${id}`, data).then((r) => r.data),
   delete: (id: number) => api.delete(`/templates/${id}`),
   setLinkedJobsEnabled: (id: number, enabled: boolean) =>
-    api.put<{ ok: boolean }>(`/templates/${id}/jobs/enabled`, { enabled }).then((r) => r.data),
+    api
+      .put<{ ok: boolean }>(`/templates/${id}/jobs/enabled`, { enabled })
+      .then((r) => r.data),
   availableAccounts: (id: number) =>
-    api.get<AvailableAccount[]>(`/templates/${id}/available-accounts`).then((r) => r.data),
+    api
+      .get<AvailableAccount[]>(`/templates/${id}/available-accounts`)
+      .then((r) => r.data),
   createJobs: (
     id: number,
     data: {
-      jobs: Array<{ accountId: number; name: string; config?: Record<string, unknown> }>;
+      jobs: Array<{
+        accountId: number;
+        name: string;
+        config?: Record<string, unknown>;
+      }>;
       scheduleWindowStart: number;
       scheduleWindowEnd: number;
     },
-  ) => api.post<{ created: number; ids: number[] }>(`/templates/${id}/create-jobs`, data).then((r) => r.data),
+  ) =>
+    api
+      .post<{
+        created: number;
+        ids: number[];
+      }>(`/templates/${id}/create-jobs`, data)
+      .then((r) => r.data),
 };
 
 // ── Logs ─────────────────────────────────────────────────────────────────────
 
 export const logsApi = {
-  list: (params?: { jobId?: number; limit?: number; offset?: number; showRetired?: boolean }) =>
-    api.get<Log[]>("/logs", { params: { ...params, showRetired: params?.showRetired ? '1' : '0' } }).then((r) => r.data),
+  list: (params?: {
+    jobId?: number;
+    limit?: number;
+    offset?: number;
+    showRetired?: boolean;
+  }) =>
+    api
+      .get<
+        Log[]
+      >("/logs", { params: { ...params, showRetired: params?.showRetired ? "1" : "0" } })
+      .then((r) => r.data),
   getOne: (id: number) => api.get<Log>(`/logs/${id}`).then((r) => r.data),
   cancel: (id: number) =>
     api.post<{ message: string }>(`/logs/${id}/cancel`).then((r) => r.data),
@@ -368,7 +414,9 @@ export const settingsApi = {
   update: (data: Partial<Settings>) =>
     api.put<Settings>("/settings", data).then((r) => r.data),
   testProxy: (url: string) =>
-    api.post<{ ok: boolean; error?: string }>("/settings/test-proxy", { url }).then((r) => r.data),
+    api
+      .post<{ ok: boolean; error?: string }>("/settings/test-proxy", { url })
+      .then((r) => r.data),
 };
 
 // ── AI Suppliers ──────────────────────────────────────────────────────────────
@@ -390,17 +438,20 @@ export type AiSupplier = {
 };
 
 export const aiSuppliersApi = {
-  list: () => api.get<AiSupplier[]>('/ai-suppliers').then(r => r.data),
-  create: (data: Omit<AiSupplier, 'id' | 'models'>) =>
-    api.post<AiSupplier>('/ai-suppliers', data).then(r => r.data),
-  update: (id: number, data: Partial<Omit<AiSupplier, 'id' | 'models'>>) =>
-    api.put<AiSupplier>(`/ai-suppliers/${id}`, data).then(r => r.data),
-  remove: (id: number) =>
-    api.delete(`/ai-suppliers/${id}`).then(r => r.data),
+  list: () => api.get<AiSupplier[]>("/ai-suppliers").then((r) => r.data),
+  create: (data: Omit<AiSupplier, "id" | "models">) =>
+    api.post<AiSupplier>("/ai-suppliers", data).then((r) => r.data),
+  update: (id: number, data: Partial<Omit<AiSupplier, "id" | "models">>) =>
+    api.put<AiSupplier>(`/ai-suppliers/${id}`, data).then((r) => r.data),
+  remove: (id: number) => api.delete(`/ai-suppliers/${id}`).then((r) => r.data),
   addModel: (supplierId: number, model_id: string, label?: string) =>
-    api.post<AiModel>(`/ai-suppliers/${supplierId}/models`, { model_id, label }).then(r => r.data),
+    api
+      .post<AiModel>(`/ai-suppliers/${supplierId}/models`, { model_id, label })
+      .then((r) => r.data),
   removeModel: (supplierId: number, modelId: number) =>
-    api.delete(`/ai-suppliers/${supplierId}/models/${modelId}`).then(r => r.data),
+    api
+      .delete(`/ai-suppliers/${supplierId}/models/${modelId}`)
+      .then((r) => r.data),
 };
 
 // ── Data Import / Export ───────────────────────────────────────────────────────
@@ -458,9 +509,7 @@ export type ImportResult = {
 export const dataApi = {
   export: () => api.get<ExportPayload>("/data/export").then((r) => r.data),
   import: (data: ExportPayload, mode: "merge" | "replace") =>
-    api
-      .post<ImportResult>("/data/import", { data, mode })
-      .then((r) => r.data),
+    api.post<ImportResult>("/data/import", { data, mode }).then((r) => r.data),
 };
 
 // ── TG Live Client ────────────────────────────────────────────────────────────
@@ -468,10 +517,16 @@ export const dataApi = {
 export type TgDialog = {
   chatId: string;
   name: string;
-  type: 'user' | 'bot' | 'group' | 'channel';
+  type: "user" | "bot" | "group" | "channel";
   username: string | null;
   unreadCount: number;
   lastMessage: { text: string; date: number; fromMe: boolean } | null;
+};
+
+export type TgButton = {
+  text: string;
+  data: string | null;
+  url: string | null;
 };
 
 export type TgMessage = {
@@ -483,7 +538,7 @@ export type TgMessage = {
   fromName: string | null;
   hasPhoto: boolean;
   hasDocument: boolean;
-  buttons: string[][] | null;
+  buttons: TgButton[][] | null;
 };
 
 export type TgContact = {
@@ -492,6 +547,16 @@ export type TgContact = {
   lastName: string;
   username: string | null;
   phone: string | null;
+};
+
+export type TgProfile = {
+  chatId: string;
+  name: string;
+  type: "user" | "bot" | "group" | "channel";
+  username: string | null;
+  phone: string | null;
+  bio: string | null;
+  memberCount: number | null;
 };
 
 export type TgFolder = {
@@ -510,38 +575,111 @@ export type TgFolder = {
 
 export const tgClientApi = {
   dialogs: (accountId: number) =>
-    api.get<TgDialog[]>(`/tg-client/${accountId}/dialogs`).then(r => r.data),
+    api.get<TgDialog[]>(`/tg-client/${accountId}/dialogs`).then((r) => r.data),
 
-  messages: (accountId: number, chatId: string, params?: { limit?: number; offsetId?: number }) =>
-    api.get<TgMessage[]>(`/tg-client/${accountId}/messages/${encodeURIComponent(chatId)}`, { params }).then(r => r.data),
+  messages: (
+    accountId: number,
+    chatId: string,
+    params?: { limit?: number; offsetId?: number },
+  ) =>
+    api
+      .get<
+        TgMessage[]
+      >(`/tg-client/${accountId}/messages/${encodeURIComponent(chatId)}`, { params })
+      .then((r) => r.data),
 
   send: (accountId: number, chatId: string, text: string) =>
-    api.post<{ id: number; date: number }>(`/tg-client/${accountId}/messages/${encodeURIComponent(chatId)}`, { text }).then(r => r.data),
+    api
+      .post<{
+        id: number;
+        date: number;
+      }>(`/tg-client/${accountId}/messages/${encodeURIComponent(chatId)}`, { text })
+      .then((r) => r.data),
 
   contacts: (accountId: number) =>
-    api.get<TgContact[]>(`/tg-client/${accountId}/contacts`).then(r => r.data),
+    api
+      .get<TgContact[]>(`/tg-client/${accountId}/contacts`)
+      .then((r) => r.data),
 
-  addContact: (accountId: number, phone: string, firstName: string, lastName?: string) =>
-    api.post<TgContact>(`/tg-client/${accountId}/contacts`, { phone, firstName, lastName }).then(r => r.data),
+  addContact: (
+    accountId: number,
+    phone: string,
+    firstName: string,
+    lastName?: string,
+  ) =>
+    api
+      .post<TgContact>(`/tg-client/${accountId}/contacts`, {
+        phone,
+        firstName,
+        lastName,
+      })
+      .then((r) => r.data),
 
   search: (accountId: number, q: string) =>
-    api.get<TgDialog[]>(`/tg-client/${accountId}/search`, { params: { q } }).then(r => r.data),
+    api
+      .get<TgDialog[]>(`/tg-client/${accountId}/search`, { params: { q } })
+      .then((r) => r.data),
 
   photoUrl: (accountId: number, chatId: string, msgId: number) =>
     `/api/tg-client/${accountId}/messages/${encodeURIComponent(chatId)}/${msgId}/photo`,
 
-  eventsUrl: (accountId: number) =>
-    `/api/tg-client/${accountId}/events`,
+  eventsUrl: (accountId: number) => `/api/tg-client/${accountId}/events`,
 
   folders: (accountId: number) =>
-    api.get<TgFolder[]>(`/tg-client/${accountId}/folders`).then(r => r.data),
+    api.get<TgFolder[]>(`/tg-client/${accountId}/folders`).then((r) => r.data),
+
+  avatarUrl: (accountId: number, chatId: string) =>
+    `/api/tg-client/${accountId}/avatar/${encodeURIComponent(chatId)}`,
+
+  profile: (accountId: number, chatId: string) =>
+    api
+      .get<TgProfile>(
+        `/tg-client/${accountId}/profile/${encodeURIComponent(chatId)}`,
+      )
+      .then((r) => r.data),
+
+  mute: (accountId: number, chatId: string, muteSecs: number) =>
+    api
+      .post<{
+        ok: boolean;
+      }>(`/tg-client/${accountId}/mute/${encodeURIComponent(chatId)}`, { muteSecs })
+      .then((r) => r.data),
+
+  pin: (accountId: number, chatId: string, pinned: boolean) =>
+    api
+      .post<{
+        ok: boolean;
+      }>(`/tg-client/${accountId}/pin/${encodeURIComponent(chatId)}`, { pinned })
+      .then((r) => r.data),
+
+  clickButton: (
+    accountId: number,
+    chatId: string,
+    msgId: number,
+    data: string,
+  ) =>
+    api
+      .post<{
+        alert: boolean;
+        message: string | null;
+        url: string | null;
+      }>(`/tg-client/${accountId}/messages/${encodeURIComponent(chatId)}/${msgId}/button`, { data })
+      .then((r) => r.data),
 };
 
 // ── AI Debug ──────────────────────────────────────────────────────────────────
 
 export const debugApi = {
-  runAi: (images: string[], prompt: string, maxTokens?: number, model?: string) =>
+  runAi: (
+    images: string[],
+    prompt: string,
+    maxTokens?: number,
+    model?: string,
+  ) =>
     api
-      .post<{ response: string; durationMs: number }>("/debug/ai", { images, prompt, maxTokens, model })
+      .post<{
+        response: string;
+        durationMs: number;
+      }>("/debug/ai", { images, prompt, maxTokens, model })
       .then((r) => r.data),
 };
