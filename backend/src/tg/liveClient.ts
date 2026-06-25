@@ -861,6 +861,44 @@ export async function getBotCommands(
   }
 }
 
+export async function resolvePeer(
+  entry: LiveEntry,
+  username: string,
+): Promise<TgDialogItem | null> {
+  const query = username.startsWith("@") ? username : `@${username}`;
+  try {
+    const entity = await entry.client.getEntity(query);
+    if (!entity) return null;
+    let chatId: string;
+    let type: TgDialogItem["type"];
+    let name: string;
+    let uname: string | null = null;
+    if (entity instanceof Api.User) {
+      chatId = `u${entity.id}`;
+      type = entity.bot ? "bot" : "user";
+      name =
+        [entity.firstName, entity.lastName].filter(Boolean).join(" ") ||
+        query;
+      uname = entity.username ?? null;
+    } else if (entity instanceof Api.Channel) {
+      chatId = `c${entity.id}`;
+      type = entity.megagroup ? "group" : "channel";
+      name = entity.title ?? query;
+      uname = entity.username ?? null;
+    } else if (entity instanceof Api.Chat) {
+      chatId = `g${(entity as Api.Chat).id}`;
+      type = "group";
+      name = (entity as Api.Chat).title ?? query;
+    } else {
+      return null;
+    }
+    entry.entityCache.set(chatId, entity as Api.User | Api.Chat | Api.Channel);
+    return { chatId, name, type, username: uname, unreadCount: 0, lastMessage: null };
+  } catch {
+    return null;
+  }
+}
+
 export async function markRead(
   entry: LiveEntry,
   chatId: string,

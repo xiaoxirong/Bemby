@@ -769,6 +769,11 @@ export const tgClientApi = {
     api
       .post(`/tg-client/${accountId}/mark-read/${encodeURIComponent(chatId)}`, { maxId })
       .then((r) => r.data),
+
+  resolvePeer: (accountId: number, username: string) =>
+    api
+      .post<TgDialog>(`/tg-client/${accountId}/resolve-peer`, { username })
+      .then((r) => r.data),
 };
 
 // ── AI Debug ──────────────────────────────────────────────────────────────────

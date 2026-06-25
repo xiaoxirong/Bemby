@@ -1,6 +1,6 @@
 <template>
   <div class="tgc-backdrop" @click.self="$emit('close')">
-    <div class="tgc-popup">
+    <div class="tgc-popup" :class="{ 'mobile-chat-open': showMobileChat }">
       <!-- Header -->
       <div class="tgc-header">
         <div class="tgc-header-left">
@@ -186,9 +186,12 @@
                   @{{ activeChat.username }}
                 </div>
               </div>
+              <button class="tgc-icon-btn tgc-chat-close-btn" @click="$emit('close')" title="Close">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
             </div>
 
-            <div class="tgc-messages" ref="messagesEl" @scroll="onMsgScroll">
+            <div class="tgc-messages" ref="messagesEl" @scroll="onMsgScroll" @click="activeMsgId = null">
               <div v-if="loadingOlder" class="tgc-load-more">
                 <span class="tgc-spinner"></span>
               </div>
@@ -225,7 +228,7 @@
 
                   <div
                     class="tgc-msg-wrap"
-                    :class="msg.fromMe ? 'tgc-msg-out' : 'tgc-msg-in'"
+                    :class="[msg.fromMe ? 'tgc-msg-out' : 'tgc-msg-in', { 'tgc-msg-active': activeMsgId === msg.id }]"
                   >
                     <!-- Hover action bar -->
                     <div class="tgc-msg-actions">
@@ -253,7 +256,7 @@
                       </button>
                     </div>
 
-                    <div class="tgc-msg-bubble">
+                    <div class="tgc-msg-bubble" @click.stop="activeMsgId = activeMsgId === msg.id ? null : msg.id">
                       <div
                         v-if="
                           !msg.fromMe &&
@@ -840,6 +843,7 @@ const replyingTo = ref<TgMessage | null>(null);
 
 // Emoji reaction picker
 const emojiPickerMsgId = ref<number | null>(null);
+const activeMsgId = ref<number | null>(null);
 const emojiPickerPos = ref({ x: 0, y: 0 });
 const QUICK_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "👎", "🔥", "🎉"];
 
@@ -1060,6 +1064,30 @@ async function copyField(value: string) {
   }, 2000);
 }
 
+// Open a Telegram URL within the messenger if possible, else fall back to browser.
+// Plain t.me/username links are resolved to a dialog and opened in-app.
+// Invite links (joinchat / +HASH) and non-TG URLs go to the browser.
+async function handleTgUrl(url: string) {
+  if (!selectedAccountId.value) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  const m = url.match(
+    /https?:\/\/t(?:elegram)?\.me\/([A-Za-z]\w+)(?:\/\d+)?(?:[?#].*)?$/i,
+  );
+  const username = m?.[1];
+  if (username && username.toLowerCase() !== "joinchat" && username.toLowerCase() !== "s") {
+    try {
+      const dialog = await tgClientApi.resolvePeer(selectedAccountId.value, username);
+      await openChat(dialog);
+      return;
+    } catch {
+      // Peer not found or resolve failed -- fall through to browser
+    }
+  }
+  window.open(url, "_blank", "noopener");
+}
+
 async function clickInlineButton(
   msg: TgMessage,
   btn: { text: string; data: string | null; url: string | null },
@@ -1067,12 +1095,17 @@ async function clickInlineButton(
   bi: number,
 ) {
   if (!selectedAccountId.value || !activeChatId.value) return;
+  const key = `${msg.id}-${ri}-${bi}`;
   if (btn.url) {
-    window.open(btn.url, "_blank", "noopener");
+    btnLoadingKey.value = key;
+    try {
+      await handleTgUrl(btn.url);
+    } finally {
+      btnLoadingKey.value = null;
+    }
     return;
   }
   if (!btn.data) return;
-  const key = `${msg.id}-${ri}-${bi}`;
   btnLoadingKey.value = key;
   try {
     const res = await tgClientApi.clickButton(
@@ -1088,7 +1121,7 @@ async function clickInlineButton(
         copyToast.value = "";
       }, 4000);
     }
-    if (res.url) window.open(res.url, "_blank", "noopener");
+    if (res.url) await handleTgUrl(res.url);
   } catch (e: any) {
     const errMsg =
       e?.response?.data?.error ?? e?.message ?? "Button click failed";
@@ -1099,8 +1132,8 @@ async function clickInlineButton(
     }, 4000);
   } finally {
     btnLoadingKey.value = null;
-    // Bots typically edit their message rather than send a new one.
-    // Re-fetch recent messages twice to pick up edits.
+    // Bots typically edit messages rather than send new ones.
+    // Re-fetch twice to pick up edits.
     setTimeout(refreshMessages, 1200);
     setTimeout(refreshMessages, 3500);
   }
@@ -3193,6 +3226,12 @@ async function addContactSubmit() {
   color: #1a1a2e;
 }
 
+/* ── Mobile-only close button in chat header ────────────────────────────────── */
+.tgc-chat-close-btn {
+  display: none;
+  flex-shrink: 0;
+}
+
 /* ── Responsive ─────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .tgc-backdrop {
@@ -3206,6 +3245,24 @@ async function addContactSubmit() {
     max-height: none;
     border-radius: 0;
     width: 100%;
+  }
+
+  /* Hide outer header when a chat is open -- chat header takes over */
+  .tgc-popup.mobile-chat-open .tgc-header {
+    display: none;
+  }
+
+  /* Show close button inside chat header on mobile */
+  .tgc-chat-close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+  }
+
+  /* Chat title fills the space between avatar and close btn */
+  .tgc-chat-title-wrap {
+    flex: 1;
   }
 
   /* Single-panel: sidebar fills the body */
@@ -3246,6 +3303,7 @@ async function addContactSubmit() {
     width: 100%;
     border-left: none;
   }
+
   /* Profile panel overlays the chat on mobile */
   .tgc-profile-panel {
     position: absolute;
@@ -3255,7 +3313,7 @@ async function addContactSubmit() {
     border-left: none;
   }
 
-  /* Tighten up message bubbles on narrow screens */
+  /* Message bubbles on narrow screens */
   .tgc-msg-bubble {
     max-width: 85%;
   }
@@ -3264,7 +3322,19 @@ async function addContactSubmit() {
     padding: 12px;
   }
 
-  /* Header: collapse logo + title; let the account select fill available space */
+  /* Tap-to-show message actions on mobile (no hover available) */
+  .tgc-msg-wrap.tgc-msg-active .tgc-msg-actions {
+    display: flex;
+  }
+
+  /* Larger touch targets for message action buttons */
+  .tgc-msg-action {
+    width: 34px;
+    height: 34px;
+    font-size: 13px;
+  }
+
+  /* Header: collapse logo + title on dialog list view */
   .tgc-logo,
   .tgc-title {
     display: none;
@@ -3281,6 +3351,40 @@ async function addContactSubmit() {
     min-width: 0;
     font-size: 14px;
     padding: 5px 8px;
+  }
+
+  /* Minimum touch target sizes (44px recommended by Apple HIG) */
+  .tgc-icon-btn,
+  .tgc-back-btn {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 8px;
+  }
+
+  /* Slightly larger send button */
+  .tgc-send-btn {
+    width: 42px;
+    height: 42px;
+  }
+
+  /* Bigger folder tab touch targets */
+  .tgc-folder-tab {
+    padding: 6px 14px;
+    font-size: 13px;
+  }
+
+  /* Safe-area bottom padding for compose box (iPhone home indicator) */
+  .tgc-compose-row {
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+
+  /* Dialog list items -- already 60px min-height, just ensure smooth scroll */
+  .tgc-dialog-list {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tgc-messages {
+    -webkit-overflow-scrolling: touch;
   }
 }
 

@@ -17,6 +17,7 @@ import {
   getThreadMessages,
   getBotCommands,
   markRead,
+  resolvePeer,
   subscribeToMessages,
   getFolders,
 } from "../tg/liveClient";
@@ -269,6 +270,27 @@ router.get("/:accountId/messages/:chatId/:msgId/photo", async (req, res) => {
     res.set("Content-Type", "image/jpeg");
     res.set("Cache-Control", "private, max-age=3600");
     res.send(buf);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /:accountId/resolve-peer -- resolve a t.me username to a dialog object
+router.post("/:accountId/resolve-peer", async (req, res) => {
+  const accountId = Number(req.params.accountId);
+  const { username } = req.body as { username?: string };
+  if (!username) {
+    res.status(400).json({ error: "username is required" });
+    return;
+  }
+  try {
+    const entry = await getLiveClient(accountId);
+    const dialog = await resolvePeer(entry, username);
+    if (!dialog) {
+      res.status(404).json({ error: "Peer not found" });
+      return;
+    }
+    res.json(dialog);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
