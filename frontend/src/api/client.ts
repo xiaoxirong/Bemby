@@ -571,6 +571,7 @@ export type TgDialog = {
   username: string | null;
   unreadCount: number;
   lastMessage: { text: string; date: number; fromMe: boolean } | null;
+  left?: boolean; // not a member; join required to send messages
 };
 
 export type TgButton = {
@@ -663,7 +664,7 @@ export const tgClientApi = {
   messages: (
     accountId: number,
     chatId: string,
-    params?: { limit?: number; offsetId?: number },
+    params?: { limit?: number; offsetId?: number; fresh?: 1 },
     signal?: AbortSignal,
   ) =>
     api
@@ -726,6 +727,13 @@ export const tgClientApi = {
     const token = localStorage.getItem("token") ?? "";
     return `/api/tg-client/${accountId}/avatar/${encodeURIComponent(chatId)}?token=${encodeURIComponent(token)}`;
   },
+
+  avatarsBatch: (accountId: number, chatIds: string[]) =>
+    api
+      .get<
+        Record<string, string>
+      >(`/tg-client/${accountId}/avatars?ids=${chatIds.map(encodeURIComponent).join(",")}`)
+      .then((r) => r.data),
 
   profile: (accountId: number, chatId: string) =>
     api
@@ -830,6 +838,30 @@ export const tgClientApi = {
       .post<TgDialog>(
         `/tg-client/${accountId}/invite/${encodeURIComponent(hash)}`,
       )
+      .then((r) => r.data),
+
+  join: (accountId: number, chatId: string) =>
+    api
+      .post<{
+        ok: boolean;
+        joined?: boolean;
+        requestSent?: boolean;
+      }>(`/tg-client/${accountId}/join/${encodeURIComponent(chatId)}`)
+      .then((r) => r.data),
+
+  membership: (accountId: number, chatId: string) =>
+    api
+      .get<{
+        member: boolean;
+      }>(`/tg-client/${accountId}/membership/${encodeURIComponent(chatId)}`)
+      .then((r) => r.data),
+
+  webviewResolve: (accountId: number, url: string, botChatId?: string | null) =>
+    api
+      .post<{ webAppUrl: string }>(`/tg-client/${accountId}/webview/resolve`, {
+        url,
+        botChatId,
+      })
       .then((r) => r.data),
 };
 

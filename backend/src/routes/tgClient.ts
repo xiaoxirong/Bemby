@@ -25,6 +25,16 @@ import {
   joinInvite,
   isAuthError,
   markSessionExpired,
+  getCachedMessages,
+  cacheMessages,
+  syncMessagesInBackground,
+  joinChannel,
+  getCachedDialogs,
+  cacheDialogs,
+  syncDialogsInBackground,
+  fetchAvatarsBatch,
+  checkMembership,
+  resolveWebApp,
 } from "../tg/liveClient";
 import type { Response } from "express";
 
@@ -53,22 +63,50 @@ router.get("/:accountId/dialogs", async (req, res) => {
   const limit = Math.min(Number(req.query.limit ?? 200), 200);
   try {
     const entry = await getLiveClient(accountId);
+    const cached = getCachedDialogs(accountId);
+    if (cached.length > 0) {
+      res.json(cached);
+      // Refresh in background and push updates via WebSocket
+      syncDialogsInBackground(accountId).catch(() => {});
+      return;
+    }
     const dialogs = await loadDialogs(entry, limit);
+    cacheDialogs(accountId, dialogs);
     res.json(dialogs);
   } catch (err: any) {
     tgError(err, accountId, res);
   }
 });
 
-// GET /:accountId/messages/:chatId?limit=50&offsetId=0
+// GET /:accountId/messages/:chatId?limit=50&offsetId=0&fresh=1
 router.get("/:accountId/messages/:chatId", async (req, res) => {
   const accountId = Number(req.params.accountId);
   const chatId = req.params.chatId;
   const limit = Math.min(Number(req.query.limit ?? 50), 100);
   const offsetId = Number(req.query.offsetId ?? 0);
+  const fresh = req.query.fresh === "1"; // bypass cache when true
   try {
     const entry = await getLiveClient(accountId);
+
+    if (offsetId === 0 && !fresh) {
+      // Initial load: serve from cache instantly, sync new messages in the background
+      const cached = getCachedMessages(accountId, chatId, limit);
+      if (cached.length > 0) {
+        res.json(cached);
+        syncMessagesInBackground(accountId, chatId).catch(() => {});
+        return;
+      }
+    } else if (offsetId !== 0) {
+      // Pagination: serve from cache if it covers a full page
+      const cached = getCachedMessages(accountId, chatId, limit, offsetId);
+      if (cached.length >= limit) {
+        res.json(cached);
+        return;
+      }
+    }
+
     const msgs = await getMessages(entry, chatId, limit, offsetId);
+    cacheMessages(accountId, chatId, msgs);
     res.json(msgs);
   } catch (err: any) {
     tgError(err, accountId, res);
@@ -95,7 +133,34 @@ router.post("/:accountId/messages/:chatId", async (req, res) => {
       text.trim(),
       replyToMsgId ? Number(replyToMsgId) : undefined,
     );
+    // Cache immediately -- GramJS won't fire NewMessage for UpdateShortSentMessage responses
+    cacheMessages(accountId, chatId, [
+      {
+        id: result.id,
+        text: text.trim(),
+        html: null,
+        date: result.date,
+        fromMe: true,
+        fromId: null,
+        fromName: null,
+        hasPhoto: false,
+        hasDocument: false,
+        buttons: null,
+        reactions: null,
+        replyToId: replyToMsgId ? Number(replyToMsgId) : null,
+        replyToText: null,
+        replyToName: null,
+        replyCount: null,
+      },
+    ]);
     res.json(result);
+    // Poll for bot replies at 1.5 s, 4 s, and 9 s after sending.
+    // GramJS NewMessage fires for incoming messages; this is the fallback for any it misses.
+    for (const delay of [1500, 4000, 9000]) {
+      setTimeout(() => {
+        syncMessagesInBackground(accountId, chatId).catch(() => {});
+      }, delay);
+    }
   } catch (err: any) {
     tgError(err, accountId, res);
   }
@@ -183,7 +248,7 @@ router.post("/:accountId/pin/:chatId", async (req, res) => {
   }
 });
 
-// GET /:accountId/avatar/:chatId -- profile photo
+// GET /:accountId/avatar/:chatId -- profile photo (single)
 router.get("/:accountId/avatar/:chatId", async (req, res) => {
   const accountId = Number(req.params.accountId);
   const chatId = decodeURIComponent(req.params.chatId);
@@ -191,6 +256,7 @@ router.get("/:accountId/avatar/:chatId", async (req, res) => {
     const entry = await getLiveClient(accountId);
     const buf = await fetchAvatar(entry, chatId);
     if (!buf) {
+      res.set("Cache-Control", "public, max-age=3600");
       res.status(404).end();
       return;
     }
@@ -198,7 +264,28 @@ router.get("/:accountId/avatar/:chatId", async (req, res) => {
     res.set("Cache-Control", "public, max-age=86400");
     res.send(buf);
   } catch {
+    res.set("Cache-Control", "public, max-age=3600");
     res.status(404).end();
+  }
+});
+
+// GET /:accountId/avatars?ids=chatId1,chatId2,... -- batch profile photos
+// Returns { [chatId]: base64String } for chats that have an avatar.
+router.get("/:accountId/avatars", async (req, res) => {
+  const accountId = Number(req.params.accountId);
+  const idsParam = (req.query.ids as string) ?? "";
+  const chatIds = idsParam
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 300);
+  try {
+    const entry = await getLiveClient(accountId);
+    const result = await fetchAvatarsBatch(entry, chatIds);
+    res.set("Cache-Control", "public, max-age=3600");
+    res.json(result);
+  } catch (err: any) {
+    tgError(err, accountId, res);
   }
 });
 
@@ -370,6 +457,49 @@ router.get("/:accountId/bot-commands/:chatId", async (req, res) => {
   try {
     const entry = await getLiveClient(accountId);
     res.json(await getBotCommands(entry, chatId));
+  } catch (err: any) {
+    tgError(err, accountId, res);
+  }
+});
+
+// POST /:accountId/join/:chatId -- join a public channel or supergroup
+// POST /:accountId/webview/resolve -- resolve a mini app URL to an authenticated web app URL
+router.post("/:accountId/webview/resolve", async (req, res) => {
+  const accountId = Number(req.params.accountId);
+  const { url, botChatId } = req.body as { url: string; botChatId?: string };
+  if (!url) {
+    res.status(400).json({ error: "url required" });
+    return;
+  }
+  try {
+    const entry = await getLiveClient(accountId);
+    const webAppUrl = await resolveWebApp(entry, url, botChatId);
+    res.json({ webAppUrl });
+  } catch (err: any) {
+    tgError(err, accountId, res);
+  }
+});
+
+// GET /:accountId/membership/:chatId -- check if user is currently a member
+router.get("/:accountId/membership/:chatId", async (req, res) => {
+  const accountId = Number(req.params.accountId);
+  const chatId = decodeURIComponent(req.params.chatId);
+  try {
+    const entry = await getLiveClient(accountId);
+    const isMember = await checkMembership(entry, chatId);
+    res.json({ member: isMember });
+  } catch (err: any) {
+    tgError(err, accountId, res);
+  }
+});
+
+router.post("/:accountId/join/:chatId", async (req, res) => {
+  const accountId = Number(req.params.accountId);
+  const chatId = decodeURIComponent(req.params.chatId);
+  try {
+    const entry = await getLiveClient(accountId);
+    const result = await joinChannel(entry, chatId);
+    res.json({ ok: true, ...result });
   } catch (err: any) {
     tgError(err, accountId, res);
   }

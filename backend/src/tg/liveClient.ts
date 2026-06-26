@@ -49,6 +49,7 @@ export type TgDialogItem = {
   username: string | null;
   unreadCount: number;
   lastMessage: { text: string; date: number; fromMe: boolean } | null;
+  left?: boolean; // true when the current user is not a member (search/resolve results)
 };
 
 export type TgContactItem = {
@@ -63,6 +64,9 @@ type LiveEntry = {
   client: TelegramClient;
   entityCache: Map<string, Api.User | Api.Chat | Api.Channel>;
   subscribers: Set<(msg: TgLiveMessage) => void>;
+  dialogSubscribers: Set<(dialogs: TgDialogItem[]) => void>;
+  // Per-entry avatar cache: chatId -> Buffer (has avatar) | null (no avatar) | undefined (not fetched)
+  avatarCache: Map<string, Buffer | null>;
 };
 
 const liveClients = new Map<number, LiveEntry>();
@@ -335,7 +339,17 @@ export async function getLiveClient(accountId: number): Promise<LiveEntry> {
     throw err;
   }
 
-  entry = { client, entityCache: new Map(), subscribers: new Set() };
+  // Invoke GetState so Telegram knows this session is active and starts pushing updates.
+  // Fire-and-forget -- we don't want to block the first HTTP request.
+  client.invoke(new Api.updates.GetState()).catch(() => {});
+
+  entry = {
+    client,
+    entityCache: new Map(),
+    subscribers: new Set(),
+    dialogSubscribers: new Set(),
+    avatarCache: new Map(),
+  };
   liveClients.set(accountId, entry);
 
   client.addEventHandler((event: NewMessageEvent) => {
@@ -373,6 +387,7 @@ export async function getLiveClient(accountId: number): Promise<LiveEntry> {
       },
     };
 
+    cacheMessages(accountId, chatId, [liveMsg.message]);
     entry!.subscribers.forEach((sub) => sub(liveMsg));
   }, new NewMessage({}));
 
@@ -442,10 +457,12 @@ export async function getMessages(
   const entity = entry.entityCache.get(chatId);
   if (!entity) throw new Error("Chat not found -- open the dialogs list first");
 
-  const msgs = await entry.client.getMessages(entity, {
+  const all = await entry.client.getMessages(entity, {
     limit,
     ...(offsetId ? { offsetId } : {}),
   });
+  // Drop service messages (join/leave/pin announcements) and empty placeholders
+  const msgs = all.filter((m) => m instanceof Api.Message);
 
   // Batch-fetch reply-to message texts for quote display
   const replyIdSet = new Set<number>();
@@ -618,6 +635,7 @@ export async function searchPeers(
       username: (c as any).username ?? null,
       unreadCount: 0,
       lastMessage: null,
+      left: c instanceof Api.Channel ? Boolean(c.left) : false,
     });
   }
 
@@ -647,21 +665,51 @@ export async function fetchAvatar(
   entry: LiveEntry,
   chatId: string,
 ): Promise<Buffer | null> {
+  if (entry.avatarCache.has(chatId)) return entry.avatarCache.get(chatId)!;
   await ensureEntityCached(entry, chatId);
   const entity = entry.entityCache.get(chatId);
-  if (!entity) return null;
+  if (!entity) {
+    entry.avatarCache.set(chatId, null);
+    return null;
+  }
   try {
     // isBig must be provided -- GramJS throws TypeError if fileParams is undefined
     const data = await entry.client.downloadProfilePhoto(
       entity as any,
       { isBig: false } as any,
     );
-    if (!data || (Buffer.isBuffer(data) && data.length === 0)) return null;
-    if (Buffer.isBuffer(data)) return data;
-    return Buffer.from(data as unknown as Uint8Array);
+    if (!data || (Buffer.isBuffer(data) && data.length === 0)) {
+      entry.avatarCache.set(chatId, null);
+      return null;
+    }
+    const buf = Buffer.isBuffer(data)
+      ? data
+      : Buffer.from(data as unknown as Uint8Array);
+    entry.avatarCache.set(chatId, buf);
+    return buf;
   } catch {
+    entry.avatarCache.set(chatId, null);
     return null;
   }
+}
+
+// Fetch multiple avatars with bounded concurrency (10 at a time).
+// Returns a map of chatId -> base64 jpeg string for chats that have an avatar.
+export async function fetchAvatarsBatch(
+  entry: LiveEntry,
+  chatIds: string[],
+): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  const CONCURRENCY = 10;
+  for (let i = 0; i < chatIds.length; i += CONCURRENCY) {
+    await Promise.all(
+      chatIds.slice(i, i + CONCURRENCY).map(async (chatId) => {
+        const buf = await fetchAvatar(entry, chatId);
+        if (buf) result[chatId] = buf.toString("base64");
+      }),
+    );
+  }
+  return result;
 }
 
 export type TgProfileInfo = {
@@ -1034,6 +1082,7 @@ export async function resolvePeer(
       return null;
     }
     entry.entityCache.set(chatId, entity as Api.User | Api.Chat | Api.Channel);
+    const left = entity instanceof Api.Channel ? Boolean(entity.left) : false;
     return {
       chatId,
       name,
@@ -1041,9 +1090,106 @@ export async function resolvePeer(
       username: uname,
       unreadCount: 0,
       lastMessage: null,
+      left,
     };
   } catch {
     return null;
+  }
+}
+
+export type JoinResult = { joined: true } | { requestSent: true };
+
+// Resolves a mini app URL to an authenticated web app URL.
+// Handles two cases:
+//   - t.me/BotName?startapp=HASH  -- uses RequestWebView with the start param
+//   - Direct web app URL from a KeyboardButtonWebView -- uses RequestSimpleWebView
+export async function resolveWebApp(
+  entry: LiveEntry,
+  tmeOrUrl: string,
+  botChatId?: string, // for direct URLs we need to know which bot owns the app
+): Promise<string> {
+  // t.me/BotName?startapp=HASH pattern
+  const startappM = tmeOrUrl.match(
+    /t(?:elegram)?\.me\/([A-Za-z]\w+)\?startapp=([^&\s]+)/i,
+  );
+  if (startappM) {
+    const [, botUsername, startParam] = startappM;
+    const bot = (await entry.client.getEntity(botUsername)) as Api.User;
+    entry.entityCache.set(entityToChatId(bot), bot);
+    const result = (await entry.client.invoke(
+      new Api.messages.RequestWebView({
+        peer: bot,
+        bot,
+        platform: "web",
+        startParam,
+        fromSwitchWebview: true,
+      } as any),
+    )) as any;
+    return result.url as string;
+  }
+
+  // Direct web app URL with a known bot
+  if (botChatId) {
+    await ensureEntityCached(entry, botChatId);
+    const bot = entry.entityCache.get(botChatId) as Api.User | undefined;
+    if (bot instanceof Api.User) {
+      const result = (await entry.client.invoke(
+        new Api.messages.RequestSimpleWebView({
+          bot,
+          url: tmeOrUrl,
+          platform: "web",
+        } as any),
+      )) as any;
+      return result.url as string;
+    }
+  }
+
+  // Fallback: return URL unchanged (iframe will load it without TG auth)
+  return tmeOrUrl;
+}
+
+// Re-fetches the channel from TG to get the latest membership state.
+export async function checkMembership(
+  entry: LiveEntry,
+  chatId: string,
+): Promise<boolean> {
+  await ensureEntityCached(entry, chatId);
+  const entity = entry.entityCache.get(chatId);
+  if (!entity || !(entity instanceof Api.Channel)) return false;
+  try {
+    const result = (await entry.client.invoke(
+      new Api.channels.GetChannels({ id: [entity as Api.Channel] }),
+    )) as Api.messages.Chats;
+    const fresh = result.chats?.[0] as Api.Channel | undefined;
+    if (fresh) {
+      entry.entityCache.set(chatId, fresh);
+      return !fresh.left;
+    }
+  } catch {}
+  return false;
+}
+
+export async function joinChannel(
+  entry: LiveEntry,
+  chatId: string,
+): Promise<JoinResult> {
+  await ensureEntityCached(entry, chatId);
+  const entity = entry.entityCache.get(chatId);
+  if (!entity) throw new Error("Chat not found");
+  if (!(entity instanceof Api.Channel))
+    throw new Error("Only channels and supergroups can be joined this way");
+  try {
+    await entry.client.invoke(
+      new Api.channels.JoinChannel({ channel: entity }),
+    );
+    (entity as any).left = false;
+    return { joined: true };
+  } catch (err: any) {
+    // INVITE_REQUEST_SENT = group requires admin approval; request was submitted
+    if (err?.message?.includes("INVITE_REQUEST_SENT")) {
+      return { requestSent: true };
+    }
+    throw err;
   }
 }
 
@@ -1152,4 +1298,128 @@ export function subscribeToMessages(
   if (!entry) return () => {};
   entry.subscribers.add(handler);
   return () => entry.subscribers.delete(handler);
+}
+
+export function subscribeToDialogs(
+  accountId: number,
+  handler: (dialogs: TgDialogItem[]) => void,
+): () => void {
+  const entry = liveClients.get(accountId);
+  if (!entry) return () => {};
+  entry.dialogSubscribers.add(handler);
+  return () => entry.dialogSubscribers.delete(handler);
+}
+
+// --- Message cache helpers ---
+
+const MSG_CACHE_MAX = 500;
+
+export function getCachedMessages(
+  accountId: number,
+  chatId: string,
+  limit: number,
+  beforeId?: number,
+): TgMsgPayload[] {
+  const params: (number | string)[] = [accountId, chatId];
+  let sql =
+    "SELECT payload FROM tg_message_cache WHERE account_id = ? AND chat_id = ?";
+  if (beforeId !== undefined) {
+    sql += " AND msg_id < ?";
+    params.push(beforeId);
+  }
+  sql += " ORDER BY msg_id DESC LIMIT ?";
+  params.push(limit);
+  const rows = db.prepare(sql).all(...params) as { payload: string }[];
+  return rows.map((r) => JSON.parse(r.payload) as TgMsgPayload);
+}
+
+export function cacheMessages(
+  accountId: number,
+  chatId: string,
+  msgs: TgMsgPayload[],
+): void {
+  if (!msgs.length) return;
+  const insert = db.prepare(
+    "INSERT OR REPLACE INTO tg_message_cache (account_id, chat_id, msg_id, msg_date, payload) VALUES (?, ?, ?, ?, ?)",
+  );
+  db.transaction(() => {
+    for (const msg of msgs) {
+      insert.run(accountId, chatId, msg.id, msg.date, JSON.stringify(msg));
+    }
+  })();
+  // Trim to keep only the most recent MSG_CACHE_MAX per chat
+  db.prepare(
+    `DELETE FROM tg_message_cache WHERE account_id = ? AND chat_id = ? AND msg_id NOT IN (
+      SELECT msg_id FROM tg_message_cache WHERE account_id = ? AND chat_id = ? ORDER BY msg_id DESC LIMIT ?
+    )`,
+  ).run(accountId, chatId, accountId, chatId, MSG_CACHE_MAX);
+}
+
+// Fetches messages newer than the last cached msg and pushes them to subscribers.
+// Pass afterId to override the cache-based baseline (used by WS periodic sync).
+export async function syncMessagesInBackground(
+  accountId: number,
+  chatId: string,
+  afterId?: number,
+): Promise<void> {
+  const entry = liveClients.get(accountId);
+  if (!entry) return;
+
+  let maxId = afterId ?? 0;
+  if (!maxId) {
+    const row = db
+      .prepare(
+        "SELECT MAX(msg_id) as m FROM tg_message_cache WHERE account_id = ? AND chat_id = ?",
+      )
+      .get(accountId, chatId) as { m: number | null };
+    maxId = row?.m ?? 0;
+  }
+  if (!maxId) return;
+
+  const recent = await getMessages(entry, chatId, 100, 0);
+  const newMsgs = recent.filter((m) => m.id > maxId);
+  if (!newMsgs.length) return;
+  cacheMessages(accountId, chatId, newMsgs);
+  // Push oldest-first so the frontend appends in chronological order
+  const ordered = newMsgs.slice().sort((a, b) => a.id - b.id);
+  for (const msg of ordered) {
+    entry.subscribers.forEach((sub) => sub({ chatId, message: msg }));
+  }
+}
+
+// --- Dialog cache helpers ---
+
+export function getCachedDialogs(accountId: number): TgDialogItem[] {
+  const rows = db
+    .prepare(
+      "SELECT payload FROM tg_dialog_cache WHERE account_id = ? ORDER BY sort_order ASC",
+    )
+    .all(accountId) as { payload: string }[];
+  return rows.map((r) => JSON.parse(r.payload) as TgDialogItem);
+}
+
+export function cacheDialogs(accountId: number, dialogs: TgDialogItem[]): void {
+  if (!dialogs.length) return;
+  const upsert = db.prepare(
+    `INSERT INTO tg_dialog_cache (account_id, chat_id, sort_order, payload)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT (account_id, chat_id) DO UPDATE SET sort_order = excluded.sort_order, payload = excluded.payload`,
+  );
+  db.transaction(() => {
+    for (let i = 0; i < dialogs.length; i++) {
+      upsert.run(accountId, dialogs[i].chatId, i, JSON.stringify(dialogs[i]));
+    }
+  })();
+}
+
+export async function syncDialogsInBackground(
+  accountId: number,
+): Promise<void> {
+  const entry = liveClients.get(accountId);
+  if (!entry) return;
+  try {
+    const dialogs = await loadDialogs(entry);
+    cacheDialogs(accountId, dialogs);
+    entry.dialogSubscribers.forEach((sub) => sub(dialogs));
+  } catch {}
 }

@@ -140,14 +140,10 @@
               >
                 <div class="tgc-avatar" :class="`tgc-avatar-${d.type}`">
                   <img
-                    :src="avatarUrl(d.chatId)"
+                    v-if="avatarSrc(d.chatId)"
+                    :src="avatarSrc(d.chatId)"
                     class="tgc-avatar-photo"
-                    loading="lazy"
                     alt=""
-                    @error="
-                      (e: Event) =>
-                        ((e.target as HTMLImageElement).style.display = 'none')
-                    "
                   />
                   {{ avatarLetter(d.name) }}
                 </div>
@@ -163,7 +159,7 @@
                       d.lastMessage?.text || ""
                     }}</span>
                     <span v-if="d.unreadCount > 0" class="tgc-unread-badge">{{
-                      d.unreadCount > 99 ? "99+" : d.unreadCount
+                      d.unreadCount
                     }}</span>
                   </div>
                 </div>
@@ -181,6 +177,27 @@
         <!-- Chat + profile panel -->
         <template v-if="activeChat">
           <div class="tgc-chat">
+            <!-- Mini App overlay panel -->
+            <div v-if="webViewPanel" class="tgc-webview-overlay">
+              <div class="tgc-webview-header">
+                <span class="tgc-webview-title">{{ webViewPanel.title }}</span>
+                <button
+                  class="tgc-icon-btn"
+                  @click="webViewPanel = null"
+                  title="Close"
+                >
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+              <iframe
+                :src="webViewPanel.url"
+                class="tgc-webview-frame"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                allow="camera; microphone; geolocation"
+                @load="onWebViewLoad"
+              ></iframe>
+            </div>
+
             <div class="tgc-chat-header">
               <button
                 v-show="showMobileChat"
@@ -197,14 +214,10 @@
                 @click="openProfile"
               >
                 <img
-                  :src="avatarUrl(activeChat.chatId)"
+                  v-if="avatarSrc(activeChat.chatId)"
+                  :src="avatarSrc(activeChat.chatId)"
                   class="tgc-avatar-photo"
-                  loading="lazy"
                   alt=""
-                  @error="
-                    (e: Event) =>
-                      ((e.target as HTMLImageElement).style.display = 'none')
-                  "
                 />
                 {{ avatarLetter(activeChat.name) }}
               </div>
@@ -266,6 +279,14 @@
                     {{ fmtDate(msg.date) }}
                   </div>
 
+                  <!-- Unread messages marker -->
+                  <div
+                    v-if="firstUnreadId !== null && msg.id === firstUnreadId"
+                    class="tgc-unread-sep"
+                  >
+                    Unread messages
+                  </div>
+
                   <div
                     class="tgc-msg-wrap"
                     :class="[
@@ -273,6 +294,23 @@
                       { 'tgc-msg-active': activeMsgId === msg.id },
                     ]"
                   >
+                    <!-- Sender avatar (groups with known senders only) -->
+                    <template
+                      v-if="
+                        !msg.fromMe && msg.fromId && activeChat.type === 'group'
+                      "
+                    >
+                      <div
+                        v-if="showSenderAvatar(idx)"
+                        class="tgc-sender-av"
+                        :style="{ background: senderColor(msg.fromId) }"
+                        :title="msg.fromName || ''"
+                      >
+                        {{ avatarLetter(msg.fromName || "?") }}
+                      </div>
+                      <div v-else class="tgc-sender-av-ph"></div>
+                    </template>
+
                     <!-- Hover action bar -->
                     <div class="tgc-msg-actions">
                       <button
@@ -434,7 +472,40 @@
               </div>
             </div>
 
-            <div class="tgc-compose">
+            <!-- Join bar shown when the user is not a member -->
+            <div v-if="activeChat?.left" class="tgc-join-bar">
+              <template v-if="joinRequestSent">
+                <div class="tgc-join-pending">
+                  <i class="fa-solid fa-clock"></i>
+                  <span
+                    >Complete the bot task above, then your membership will be
+                    confirmed automatically.</span
+                  >
+                </div>
+                <button
+                  class="tgc-join-check-btn"
+                  @click="checkMembershipStatus"
+                >
+                  <i class="fa-solid fa-rotate"></i> Check now
+                </button>
+              </template>
+              <button
+                v-else
+                class="tgc-join-btn"
+                :disabled="joiningChannel"
+                @click="joinCurrentChat"
+              >
+                <span v-if="joiningChannel">
+                  <span class="tgc-spinner tgc-spinner-sm"></span> Joining...
+                </span>
+                <span v-else>
+                  <i class="fa-solid fa-right-to-bracket"></i> Join
+                  {{ activeChat?.type === "channel" ? "Channel" : "Group" }}
+                </span>
+              </button>
+            </div>
+
+            <div v-else class="tgc-compose">
               <!-- Reply strip -->
               <div v-if="replyingTo" class="tgc-reply-strip">
                 <i class="fa-solid fa-reply tgc-reply-strip-icon"></i>
@@ -505,13 +576,10 @@
                   :class="`tgc-avatar-${profileDetails.type}`"
                 >
                   <img
-                    :src="avatarUrl(profileDetails.chatId)"
+                    v-if="avatarSrc(profileDetails.chatId)"
+                    :src="avatarSrc(profileDetails.chatId)"
                     class="tgc-avatar-photo"
                     alt=""
-                    @error="
-                      (e: Event) =>
-                        ((e.target as HTMLImageElement).style.display = 'none')
-                    "
                   />
                   {{ avatarLetter(profileDetails.name) }}
                 </div>
@@ -877,6 +945,7 @@
 <script setup lang="ts">
 import {
   ref,
+  reactive,
   computed,
   watch,
   onMounted,
@@ -900,6 +969,34 @@ import {
 const { inline = false } = defineProps<{ inline?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
+// ── Messenger state persistence ───────────────────────────────────────────────
+
+const MESSENGER_STATE_KEY = "bemby_messenger_state";
+type MessengerState = { accountId: number; dialog: TgDialog | null };
+
+function loadMessengerState(): MessengerState | null {
+  try {
+    const raw = localStorage.getItem(MESSENGER_STATE_KEY);
+    return raw ? (JSON.parse(raw) as MessengerState) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveMessengerState(): void {
+  if (!selectedAccountId.value) {
+    localStorage.removeItem(MESSENGER_STATE_KEY);
+    return;
+  }
+  try {
+    const state: MessengerState = {
+      accountId: selectedAccountId.value,
+      dialog: activeChat.value ?? null,
+    };
+    localStorage.setItem(MESSENGER_STATE_KEY, JSON.stringify(state));
+  } catch {}
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const accounts = ref<Account[]>([]);
@@ -913,6 +1010,10 @@ const loadingDialogs = ref(false);
 const dialogError = ref("");
 const reconnecting = ref(false);
 
+// Client-side avatar cache: `${accountId}:${chatId}` -> base64 jpeg string, or '' (no avatar).
+// Undefined key = not yet fetched.
+const avatarCache = reactive(new Map<string, string>());
+
 const searchQuery = ref("");
 const searchResults = ref<TgDialog[] | null>(null);
 const searchTimer = ref<ReturnType<typeof setTimeout> | null>(null);
@@ -920,11 +1021,16 @@ const searchTimer = ref<ReturnType<typeof setTimeout> | null>(null);
 const activeChatId = ref<string | null>(null);
 const activeChat = ref<TgDialog | null>(null);
 const messages = ref<TgMessage[]>([]);
+const firstUnreadId = ref<number | null>(null);
 const loadingMessages = ref(false);
 const loadingOlder = ref(false);
 const canLoadMore = ref(true);
 const sending = ref(false);
 const inputText = ref("");
+
+const joiningChannel = ref(false);
+const joinRequestSent = ref(false);
+let membershipPollTimer: ReturnType<typeof setInterval> | null = null;
 
 const showContacts = ref(false);
 const contacts = ref<TgContact[]>([]);
@@ -940,6 +1046,7 @@ const messagesEl = ref<HTMLElement | null>(null);
 const inputEl = ref<HTMLTextAreaElement | null>(null);
 const showMobileChat = ref(false);
 const showProfile = ref(false);
+const webViewPanel = ref<{ url: string; title: string } | null>(null);
 const profileDetails = ref<TgProfile | null>(null);
 const profileLoading = ref(false);
 const copyToast = ref("");
@@ -1003,6 +1110,10 @@ function startBgDialogLoad(accountId: number) {
       dialogs.value = allDialogs.map((d) =>
         localZeroed.has(d.chatId) ? { ...d, unreadCount: 0 } : d,
       );
+      loadAvatars(
+        accountId,
+        allDialogs.map((d) => d.chatId),
+      );
     })
     .catch(() => {
       if (ctrl.signal.aborted) return; // expected cancellation -- not an error
@@ -1013,7 +1124,11 @@ let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 const tgFolders = ref<TgFolder[]>([]);
 const activeFolder = ref<"all" | number>("all");
 
-let evtSource: EventSource | null = null;
+let liveWs: WebSocket | null = null;
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let wsBackoff = 1_000; // ms, doubles on each failure, caps at 30s
+let wsAccountId: number | null = null; // account the socket is open for
+let wsEverOpen = false; // distinguishes first-open from reconnect
 let scrolledToBottom = true;
 
 // ── Computed ──────────────────────────────────────────────────────────────────
@@ -1068,16 +1183,31 @@ const commandSuggestions = computed(() => {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 onMounted(async () => {
+  window.addEventListener("message", handleMiniAppMessage);
   accounts.value = await accountsApi.list().catch(() => []);
-  if (authenticatedAccounts.value.length) {
-    selectedAccountId.value = authenticatedAccounts.value[0].id;
-    await loadDialogs();
-    startSSE();
+  if (!authenticatedAccounts.value.length) return;
+
+  const saved = loadMessengerState();
+  const savedAccountValid =
+    saved != null &&
+    authenticatedAccounts.value.some((a) => a.id === saved.accountId);
+  selectedAccountId.value = savedAccountValid
+    ? saved.accountId
+    : authenticatedAccounts.value[0].id;
+
+  await loadDialogs();
+  startLiveSocket();
+
+  // Restore the last open chat -- messages load from cache instantly, new ones sync via WS
+  if (savedAccountValid && saved!.dialog) {
+    openChat(saved!.dialog);
   }
 });
 
 onBeforeUnmount(() => {
-  evtSource?.close();
+  closeLiveSocket();
+  stopMembershipPoll();
+  window.removeEventListener("message", handleMiniAppMessage);
   if (searchTimer.value) clearTimeout(searchTimer.value);
 });
 
@@ -1158,6 +1288,31 @@ function avatarUrl(chatId: string) {
   return tgClientApi.avatarUrl(selectedAccountId.value, chatId);
 }
 
+// Returns a data URI from the local cache, or '' if not available yet.
+function avatarSrc(chatId: string): string {
+  if (!selectedAccountId.value) return "";
+  const data = avatarCache.get(`${selectedAccountId.value}:${chatId}`);
+  return data ? `data:image/jpeg;base64,${data}` : "";
+}
+
+async function loadAvatars(
+  accountId: number,
+  chatIds: string[],
+): Promise<void> {
+  const missing = chatIds.filter(
+    (id) => !avatarCache.has(`${accountId}:${id}`),
+  );
+  if (!missing.length) return;
+  // Mark as pending to avoid duplicate requests
+  for (const id of missing) avatarCache.set(`${accountId}:${id}`, "");
+  try {
+    const result = await tgClientApi.avatarsBatch(accountId, missing);
+    for (const id of missing) {
+      if (result[id]) avatarCache.set(`${accountId}:${id}`, result[id]);
+    }
+  } catch {}
+}
+
 async function openProfile() {
   if (!selectedAccountId.value || !activeChat.value) return;
   if (showProfile.value) {
@@ -1186,6 +1341,8 @@ async function openProfile() {
         memberCount: null,
       };
     }
+    if (selectedAccountId.value && profileDetails.value)
+      loadAvatars(selectedAccountId.value, [profileDetails.value.chatId]);
   } finally {
     profileLoading.value = false;
   }
@@ -1234,6 +1391,89 @@ function onMsgLinkClick(e: MouseEvent) {
   handleTgUrl(href);
 }
 
+function isMiniAppUrl(url: string): boolean {
+  return /[?&]startapp=/i.test(url) || /t(?:elegram)?\.me\/\w+\/\w+/i.test(url);
+}
+
+// postMessage bridge for the Telegram Mini App SDK
+function onWebViewLoad(e: Event) {
+  const iframe = e.target as HTMLIFrameElement;
+  try {
+    iframe.contentWindow?.postMessage(
+      JSON.stringify({
+        eventType: "viewport_changed",
+        eventData: {
+          height: iframe.clientHeight,
+          is_expanded: true,
+          is_state_stable: true,
+        },
+      }),
+      "*",
+    );
+  } catch {}
+}
+
+function handleMiniAppMessage(e: MessageEvent) {
+  if (!webViewPanel.value) return;
+  let eventType: string | undefined;
+  try {
+    const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+    eventType = data?.eventType;
+  } catch {
+    return;
+  }
+  if (eventType === "web_app_close") webViewPanel.value = null;
+  if (eventType === "web_app_ready") {
+    // Send theme params so the mini app can match the UI colour scheme
+    (e.source as Window)?.postMessage(
+      JSON.stringify({
+        eventType: "theme_changed",
+        eventData: {
+          theme_params: {
+            bg_color: "#ffffff",
+            text_color: "#1a1a2e",
+            hint_color: "#999999",
+            link_color: "#4361ee",
+            button_color: "#4361ee",
+            button_text_color: "#ffffff",
+            secondary_bg_color: "#f7f8fc",
+          },
+        },
+      }),
+      "*",
+    );
+  }
+  if (eventType === "web_app_open_link") {
+    try {
+      const data = typeof e.data === "string" ? JSON.parse(e.data) : e.data;
+      const url = data?.eventData?.url;
+      if (url) window.open(url, "_blank", "noopener");
+    } catch {}
+  }
+}
+
+async function openMiniApp(
+  url: string,
+  title: string,
+  botChatId?: string | null,
+): Promise<void> {
+  if (!selectedAccountId.value) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  try {
+    const { webAppUrl } = await tgClientApi.webviewResolve(
+      selectedAccountId.value,
+      url,
+      botChatId,
+    );
+    webViewPanel.value = { url: webAppUrl, title };
+  } catch {
+    // Fallback: open directly in iframe (without TG auth token)
+    webViewPanel.value = { url, title };
+  }
+}
+
 async function handleTgUrl(url: string) {
   if (!selectedAccountId.value) {
     window.open(url, "_blank", "noopener");
@@ -1274,6 +1514,12 @@ async function handleTgUrl(url: string) {
     } finally {
       checkingInvite.value = false;
     }
+    return;
+  }
+
+  // Mini App links: t.me/bot?startapp=HASH or t.me/bot/appname
+  if (isMiniAppUrl(url)) {
+    await openMiniApp(url, "Mini App");
     return;
   }
 
@@ -1322,6 +1568,66 @@ async function confirmJoinInvite() {
   }
 }
 
+function stopMembershipPoll() {
+  if (membershipPollTimer !== null) {
+    clearInterval(membershipPollTimer);
+    membershipPollTimer = null;
+  }
+}
+
+async function checkMembershipStatus(): Promise<void> {
+  if (!selectedAccountId.value || !activeChatId.value || !joinRequestSent.value)
+    return;
+  try {
+    const { member } = await tgClientApi.membership(
+      selectedAccountId.value,
+      activeChatId.value,
+    );
+    if (member && activeChat.value) {
+      stopMembershipPoll();
+      joinRequestSent.value = false;
+      activeChat.value = { ...activeChat.value, left: false };
+      await fetchMessages(true);
+    }
+  } catch {
+    // silently ignore -- will retry on next poll
+  }
+}
+
+function startMembershipPoll() {
+  stopMembershipPoll();
+  // Poll every 8 seconds while the join request is pending
+  membershipPollTimer = setInterval(checkMembershipStatus, 8_000);
+}
+
+async function joinCurrentChat() {
+  if (!selectedAccountId.value || !activeChatId.value || !activeChat.value)
+    return;
+  joiningChannel.value = true;
+  try {
+    const result = await tgClientApi.join(
+      selectedAccountId.value,
+      activeChatId.value,
+    );
+    if (result.requestSent) {
+      joinRequestSent.value = true;
+      startMembershipPoll();
+    } else {
+      activeChat.value = { ...activeChat.value, left: false };
+      await fetchMessages(true);
+    }
+  } catch (e: any) {
+    const raw = e?.response?.data?.error ?? e?.message ?? "Failed to join";
+    copyToast.value = raw;
+    if (copyToastTimer) clearTimeout(copyToastTimer);
+    copyToastTimer = setTimeout(() => {
+      copyToast.value = "";
+    }, 4000);
+  } finally {
+    joiningChannel.value = false;
+  }
+}
+
 async function clickInlineButton(
   msg: TgMessage,
   btn: {
@@ -1336,14 +1642,14 @@ async function clickInlineButton(
   if (!selectedAccountId.value || !activeChatId.value) return;
   const key = `${msg.id}-${ri}-${bi}`;
   if (btn.url) {
-    // Mini App (Web App) buttons must open in a real browser -- we can't run Mini Apps in-app.
-    if (btn.webApp) {
-      window.open(btn.url, "_blank", "noopener");
-      return;
-    }
     btnLoadingKey.value = key;
     try {
-      await handleTgUrl(btn.url);
+      if (btn.webApp) {
+        // Open Mini App inside Bemby -- pass the sender's chatId as the bot context
+        await openMiniApp(btn.url, btn.text || "Mini App", msg.fromId);
+      } else {
+        await handleTgUrl(btn.url);
+      }
     } finally {
       btnLoadingKey.value = null;
     }
@@ -1384,6 +1690,10 @@ async function clickInlineButton(
     // Re-fetch twice to pick up edits.
     setTimeout(refreshMessages, 1200);
     setTimeout(refreshMessages, 3500);
+    // If waiting for approval, check membership after the bot interaction completes
+    if (joinRequestSent.value) {
+      setTimeout(checkMembershipStatus, 4000);
+    }
   }
 }
 
@@ -1589,6 +1899,7 @@ async function sendThreadMessage() {
     threadMessages.value.push({
       id: result.id,
       text,
+      html: null,
       date: result.date,
       fromMe: true,
       fromId: null,
@@ -1616,6 +1927,35 @@ async function sendThreadMessage() {
 
 function avatarLetter(name: string) {
   return (name || "?").trim()[0].toUpperCase();
+}
+
+const SENDER_COLOURS = [
+  "#4361ee",
+  "#e63946",
+  "#2ec4b6",
+  "#f4a261",
+  "#7209b7",
+  "#118ab2",
+  "#06d6a0",
+  "#ff6b6b",
+];
+
+function senderColor(fromId: string | null): string {
+  if (!fromId) return SENDER_COLOURS[0];
+  let h = 0;
+  for (let i = 0; i < fromId.length; i++)
+    h = ((h << 5) - h + fromId.charCodeAt(i)) | 0;
+  return SENDER_COLOURS[Math.abs(h) % SENDER_COLOURS.length];
+}
+
+function showSenderAvatar(idx: number): boolean {
+  const msg = messages.value[idx];
+  // Only show in groups with a known sender; channels post as the channel itself (no fromId)
+  if (msg.fromMe || !msg.fromId) return false;
+  const chat = activeChat.value;
+  if (!chat || chat.type !== "group") return false;
+  const next = messages.value[idx + 1];
+  return !next || next.fromMe || next.fromId !== msg.fromId;
 }
 
 function fmtTime(ts: number) {
@@ -1666,6 +2006,27 @@ async function scrollBottom(force = false) {
   }
 }
 
+// Scroll to the first unread message when opening a chat with unread messages.
+// Falls back to scrolling to the bottom when all loaded messages are unread
+// (meaning there are more unread messages further back) or when there are none.
+async function scrollToUnread(unreadCount: number): Promise<void> {
+  await nextTick();
+  const el = messagesEl.value;
+  if (!el) return;
+  if (!firstUnreadId.value) {
+    el.scrollTop = el.scrollHeight;
+    return;
+  }
+  const target = el.querySelector(
+    `[data-msg-id="${firstUnreadId.value}"]`,
+  ) as HTMLElement | null;
+  if (target) {
+    el.scrollTop = target.offsetTop - el.offsetTop - 60;
+  } else {
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
 function onMsgScroll() {
   const el = messagesEl.value;
   if (!el) return;
@@ -1682,7 +2043,7 @@ function autoResize() {
 // ── Account change ────────────────────────────────────────────────────────────
 
 async function onAccountChange() {
-  evtSource?.close();
+  closeLiveSocket();
   dialogs.value = [];
   activeChatId.value = null;
   activeChat.value = null;
@@ -1696,8 +2057,9 @@ async function onAccountChange() {
   showThread.value = false;
   replyingTo.value = null;
   botCommands.value = [];
+  saveMessengerState();
   await loadDialogs();
-  startSSE();
+  startLiveSocket();
 }
 
 // ── Dialogs ───────────────────────────────────────────────────────────────────
@@ -1760,7 +2122,7 @@ async function loadDialogs() {
   try {
     // Load first 30 and folders in parallel -- show UI immediately
     const [firstBatch, folders] = await Promise.all([
-      tgClientApi.dialogs(accountId, { limit: 30 }),
+      tgClientApi.dialogs(accountId, { limit: 200 }),
       tgClientApi.folders(accountId).catch(() => []),
     ]);
     // Only apply if the account hasn't changed while we were waiting
@@ -1769,8 +2131,11 @@ async function loadDialogs() {
     tgFolders.value = folders;
     loadingDialogs.value = false;
 
-    // Background: load full 200 dialogs -- abortable when user clicks a chat
-    startBgDialogLoad(accountId);
+    // Batch-fetch all dialog avatars in the background (no individual HTTP requests)
+    loadAvatars(
+      accountId,
+      firstBatch.map((d) => d.chatId),
+    );
   } catch (e: any) {
     const raw =
       e?.response?.data?.error ?? e?.message ?? "Failed to load chats";
@@ -1819,9 +2184,14 @@ function onSearchInput() {
 async function openChat(dialog: TgDialog) {
   // Cancel the background dialog load so this request gets the connection first
   cancelBgDialogLoad();
-  activeChatId.value = dialog.chatId;
-  activeChat.value = dialog;
+  // Prefer fresh dialog data from the loaded list (has accurate unreadCount)
+  const fresh = dialogs.value.find((d) => d.chatId === dialog.chatId);
+  const dlg = fresh ?? dialog;
+  activeChatId.value = dlg.chatId;
+  activeChat.value = dlg;
+  saveMessengerState();
   messages.value = [];
+  firstUnreadId.value = null;
   canLoadMore.value = true;
   scrolledToBottom = true;
   showMobileChat.value = true;
@@ -1831,9 +2201,11 @@ async function openChat(dialog: TgDialog) {
   threadRootMsg.value = null;
   replyingTo.value = null;
   botCommands.value = [];
+  joinRequestSent.value = false;
+  stopMembershipPoll();
   await fetchMessages();
-  markChatRead(dialog.chatId);
-  if (dialog.type === "bot") loadBotCommands(dialog.chatId);
+  markChatRead(dlg.chatId);
+  if (dlg.type === "bot") loadBotCommands(dlg.chatId);
   // Resume background dialog load 2s after messages are shown -- low priority
   if (selectedAccountId.value) {
     const accountId = selectedAccountId.value;
@@ -1846,6 +2218,7 @@ async function openChat(dialog: TgDialog) {
 function markChatRead(chatId: string) {
   if (!selectedAccountId.value || !messages.value.length) return;
   const maxId = Math.max(...messages.value.map((m) => m.id));
+  firstUnreadId.value = null;
   // Clear badge immediately in UI
   const idx = dialogs.value.findIndex((d) => d.chatId === chatId);
   if (idx !== -1)
@@ -1858,26 +2231,40 @@ function backToDialogs() {
   showMobileChat.value = false;
 }
 
-async function fetchMessages() {
+async function fetchMessages(fresh = false) {
   if (!selectedAccountId.value || !activeChatId.value) return;
   // Cancel any in-flight fetch (user switched chats before previous one finished)
   msgFetchCtrl?.abort();
   msgFetchCtrl = new AbortController();
   const ctrl = msgFetchCtrl;
   const chatId = activeChatId.value;
+  const unreadCount = activeChat.value?.unreadCount ?? 0;
 
   loadingMessages.value = true;
   try {
     const msgs = await tgClientApi.messages(
       selectedAccountId.value,
       chatId,
-      { limit: 50 },
+      { limit: 30, ...(fresh ? { fresh: 1 } : {}) },
       ctrl.signal,
     );
     if (ctrl.signal.aborted || activeChatId.value !== chatId) return;
     messages.value = msgs.reverse();
-    if (msgs.length < 50) canLoadMore.value = false;
-    await scrollBottom(true);
+    if (msgs.length < 30) canLoadMore.value = false;
+
+    // Tell the backend which chat is active so it can periodically sync new messages
+    if (liveWs && liveWs.readyState === WebSocket.OPEN) {
+      liveWs.send(JSON.stringify({ type: "activateChat", chatId }));
+    }
+
+    // Mark the first unread message so we can scroll to it and show a divider
+    if (unreadCount > 0 && unreadCount < messages.value.length) {
+      firstUnreadId.value =
+        messages.value[messages.value.length - unreadCount].id;
+    } else {
+      firstUnreadId.value = null;
+    }
+    await scrollToUnread(unreadCount);
   } catch (e: any) {
     if (ctrl.signal.aborted) return;
     console.error("Failed to load messages:", e);
@@ -1981,6 +2368,7 @@ async function sendMessage() {
     messages.value.push({
       id: result.id,
       text,
+      html: null,
       date: result.date,
       fromMe: true,
       fromId: null,
@@ -2015,28 +2403,107 @@ async function sendMessage() {
   }
 }
 
-// ── SSE ───────────────────────────────────────────────────────────────────────
+// ── WebSocket live connection ─────────────────────────────────────────────────
 
-function startSSE() {
+function closeLiveSocket() {
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
+  }
+  liveWs?.close();
+  liveWs = null;
+  wsAccountId = null;
+  wsEverOpen = false;
+  wsBackoff = 1_000;
+}
+
+function startLiveSocket() {
   if (!selectedAccountId.value) return;
-  evtSource?.close();
-  const token = localStorage.getItem("token");
-  const url = tgClientApi.eventsUrl(selectedAccountId.value);
-  // SSE with auth header is not directly supported; use URL param as fallback
-  evtSource = new EventSource(`${url}?token=${token}`);
+  // Cancel any pending reconnect before starting a fresh connection
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
+  }
+  liveWs?.close();
 
-  evtSource.onmessage = (e) => {
+  const accountId = selectedAccountId.value;
+  wsAccountId = accountId;
+  const token = localStorage.getItem("token") ?? "";
+  // Derive ws(s):// from the current page origin
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const ws = new WebSocket(
+    `${proto}://${location.host}/ws?accountId=${accountId}&token=${encodeURIComponent(token)}`,
+  );
+  liveWs = ws;
+
+  ws.onopen = () => {
+    wsBackoff = 1_000; // reset backoff after a successful connection
+    if (wsEverOpen) {
+      // Reconnected after a drop -- catch up on missed messages
+      catchUpActiveChatMessages();
+    }
+    wsEverOpen = true;
+    // Re-register active chat so the backend resumes periodic sync
+    if (activeChatId.value) {
+      ws.send(
+        JSON.stringify({ type: "activateChat", chatId: activeChatId.value }),
+      );
+    }
+  };
+
+  ws.onmessage = (e) => {
     try {
-      const data = JSON.parse(e.data);
+      const data = JSON.parse(e.data as string);
       if (data.type === "message")
         onIncomingMessage(data.chatId as string, data.message as TgMessage);
+      else if (data.type === "dialogs" && Array.isArray(data.dialogs)) {
+        const updated = data.dialogs as TgDialog[];
+        dialogs.value = updated;
+        if (selectedAccountId.value)
+          loadAvatars(
+            selectedAccountId.value,
+            updated.map((d) => d.chatId),
+          );
+      }
     } catch {
       /* ignore parse errors */
     }
   };
-  evtSource.onerror = () => {
-    // SSE will auto-reconnect
+
+  ws.onclose = () => {
+    if (wsAccountId !== accountId) return; // account changed -- don't reconnect
+    // Exponential backoff reconnect, capped at 30 s
+    wsReconnectTimer = setTimeout(() => {
+      wsBackoff = Math.min(wsBackoff * 2, 30_000);
+      startLiveSocket();
+    }, wsBackoff);
   };
+
+  ws.onerror = () => {
+    // onclose fires right after -- reconnect logic lives there
+  };
+}
+
+// On reconnect, silently append any messages that arrived while the socket was down.
+async function catchUpActiveChatMessages(): Promise<void> {
+  if (!selectedAccountId.value || !activeChatId.value || !messages.value.length)
+    return;
+  const newestId = Math.max(...messages.value.map((m) => m.id));
+  try {
+    const fresh = await tgClientApi.messages(
+      selectedAccountId.value,
+      activeChatId.value,
+      { limit: 50 },
+    );
+    const newMsgs = fresh.filter((m) => m.id > newestId).reverse(); // oldest-first
+    for (const msg of newMsgs) {
+      if (!messages.value.find((m) => m.id === msg.id))
+        messages.value.push(msg);
+    }
+    if (newMsgs.length) await scrollBottom(true);
+  } catch {
+    // Best effort -- non-critical
+  }
 }
 
 function onIncomingMessage(chatId: string, msg: TgMessage) {
@@ -2490,6 +2957,7 @@ async function addContactSubmit() {
   flex-direction: column;
   overflow: hidden;
   background: #fff;
+  position: relative;
 }
 
 .tgc-chat-header {
@@ -2558,6 +3026,29 @@ async function addContactSubmit() {
   right: 0;
 }
 
+.tgc-unread-sep {
+  text-align: center;
+  font-size: 12px;
+  color: #4a9eff;
+  margin: 12px 0 6px;
+  position: relative;
+}
+.tgc-unread-sep::before,
+.tgc-unread-sep::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: calc(50% - 72px);
+  height: 1px;
+  background: #4a9eff66;
+}
+.tgc-unread-sep::before {
+  left: 0;
+}
+.tgc-unread-sep::after {
+  right: 0;
+}
+
 .tgc-msg-wrap {
   display: flex;
   margin: 2px 0;
@@ -2565,6 +3056,27 @@ async function addContactSubmit() {
 
 .tgc-msg-in {
   justify-content: flex-start;
+}
+
+.tgc-sender-av,
+.tgc-sender-av-ph {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  margin-right: 6px;
+  align-self: flex-end;
+  order: -1;
+}
+
+.tgc-sender-av {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  user-select: none;
 }
 
 .tgc-msg-out {
@@ -3037,6 +3549,111 @@ async function addContactSubmit() {
 }
 
 /* ── Compose ────────────────────────────────────────────────────────────────── */
+.tgc-join-pending {
+  color: #555;
+  font-size: 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+}
+
+.tgc-join-pending i {
+  color: #f4a261;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.tgc-join-check-btn {
+  background: none;
+  border: 1px solid #4361ee;
+  color: #4361ee;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tgc-join-check-btn:hover {
+  background: #eef0fd;
+}
+
+/* ── Mini App overlay ───────────────────────────────────────────────────────── */
+.tgc-webview-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+
+.tgc-webview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e8e9ed;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.tgc-webview-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a2e;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tgc-webview-frame {
+  flex: 1;
+  border: none;
+  width: 100%;
+}
+
+.tgc-join-bar {
+  border-top: 1px solid #e8e9ed;
+  flex-shrink: 0;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.tgc-join-btn {
+  background: #4361ee;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 32px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  justify-content: center;
+}
+.tgc-join-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.tgc-join-btn:not(:disabled):hover {
+  background: #3251d3;
+}
+.tgc-spinner-sm {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
 .tgc-compose {
   display: flex;
   flex-direction: column;

@@ -1,5 +1,5 @@
-import { defineConfig } from 'vite';
-import vue from '@vitejs/plugin-vue';
+import { defineConfig } from "vite";
+import vue from "@vitejs/plugin-vue";
 
 export default defineConfig({
   plugins: [vue()],
@@ -13,13 +13,18 @@ export default defineConfig({
       timeout: 120000,
     },
     proxy: {
-      '/api': {
-        target: `http://${process.env.BACKEND_HOST ?? 'localhost'}:${process.env.BACKEND_PORT ?? 3000}`,
+      "/api": {
+        target: `http://${process.env.BACKEND_HOST ?? "localhost"}:${process.env.BACKEND_PORT ?? 3000}`,
+        changeOrigin: true,
+      },
+      "/ws": {
+        target: `ws://${process.env.BACKEND_HOST ?? "localhost"}:${process.env.BACKEND_PORT ?? 3000}`,
+        ws: true,
         changeOrigin: true,
       },
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: "dist",
   },
 });
