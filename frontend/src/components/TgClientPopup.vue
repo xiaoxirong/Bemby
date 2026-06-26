@@ -200,7 +200,7 @@
 
             <div class="tgc-chat-header">
               <button
-                v-show="showMobileChat"
+                v-show="showMobileChat || chatNavStack.length > 0"
                 class="tgc-back-btn"
                 @click="backToDialogs"
                 title="Back to chats"
@@ -1070,6 +1070,10 @@ const invitePreview = ref<TgInvitePreview | null>(null);
 const checkingInvite = ref(false);
 const joiningInvite = ref(false);
 
+// Chat navigation history -- used so "back" returns to the previous chat
+// when the user was navigated here from within another chat (e.g. via invite link or URL button)
+const chatNavStack = ref<TgDialog[]>([]);
+
 // Thread / comments panel
 const showThread = ref(false);
 const threadRootMsg = ref<TgMessage | null>(null);
@@ -1500,7 +1504,7 @@ async function handleTgUrl(url: string) {
           username: null,
           unreadCount: 0,
           lastMessage: null,
-        });
+        }, true);
       } else {
         invitePreview.value = preview;
       }
@@ -1523,10 +1527,33 @@ async function handleTgUrl(url: string) {
     return;
   }
 
-  // Require end-of-string after the optional /messageId -- this intentionally excludes
-  // ?start=, ?startapp=, and non-numeric path segments used by Telegram Mini Apps.
+  // Bot deep links: t.me/botname?start=PARAM -- open bot and send the start param
+  const startM = url.match(
+    /https?:\/\/t(?:elegram)?\.me\/([A-Za-z]\w+)[?&]start=([^&]+)/i,
+  );
+  if (startM) {
+    const [, botUsername, startParam] = startM;
+    try {
+      const dialog = await tgClientApi.startBot(
+        selectedAccountId.value,
+        botUsername,
+        decodeURIComponent(startParam),
+      );
+      await openChat(dialog, true);
+      // Fetch messages after a short delay so the bot reply is visible
+      setTimeout(refreshMessages, 1500);
+    } catch (e: any) {
+      const raw = e?.response?.data?.error ?? e?.message ?? "Could not start bot";
+      copyToast.value = raw;
+      if (copyToastTimer) clearTimeout(copyToastTimer);
+      copyToastTimer = setTimeout(() => { copyToast.value = ""; }, 4000);
+    }
+    return;
+  }
+
+  // Username or username/messageId links
   const m = url.match(
-    /https?:\/\/t(?:elegram)?\.me\/([A-Za-z]\w+)(?:\/(\d+))?$/i,
+    /https?:\/\/t(?:elegram)?\.me\/([A-Za-z]\w+)(?:\/(\d+))?(?:[?#].*)?$/i,
   );
   const username = m?.[1];
   if (
@@ -1539,11 +1566,19 @@ async function handleTgUrl(url: string) {
         selectedAccountId.value,
         username,
       );
-      await openChat(dialog);
+      await openChat(dialog, true);
       return;
     } catch {
-      // Peer not found or resolve failed -- fall through to browser
+      // Peer not found or resolve failed
     }
+  }
+
+  // Never open t.me links in the browser -- show a toast if we couldn't handle it
+  if (/https?:\/\/t(?:elegram)?\.me\//i.test(url)) {
+    copyToast.value = "Could not open this Telegram link in the messenger";
+    if (copyToastTimer) clearTimeout(copyToastTimer);
+    copyToastTimer = setTimeout(() => { copyToast.value = ""; }, 4000);
+    return;
   }
   window.open(url, "_blank", "noopener");
 }
@@ -1555,7 +1590,7 @@ async function confirmJoinInvite() {
   try {
     const dialog = await tgClientApi.joinInvite(selectedAccountId.value, hash);
     invitePreview.value = null;
-    await openChat(dialog);
+    await openChat(dialog, true);
   } catch (e: any) {
     const raw = e?.response?.data?.error ?? e?.message ?? "Failed to join";
     copyToast.value = friendlyTgError(raw);
@@ -1612,6 +1647,8 @@ async function joinCurrentChat() {
     if (result.requestSent) {
       joinRequestSent.value = true;
       startMembershipPoll();
+      // Fetch so any verification/bot message sent by the group is visible immediately
+      await fetchMessages(true);
     } else {
       activeChat.value = { ...activeChat.value, left: false };
       await fetchMessages(true);
@@ -2181,12 +2218,18 @@ function onSearchInput() {
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 
-async function openChat(dialog: TgDialog) {
+async function openChat(dialog: TgDialog, addToHistory = false) {
   // Cancel the background dialog load so this request gets the connection first
   cancelBgDialogLoad();
   // Prefer fresh dialog data from the loaded list (has accurate unreadCount)
   const fresh = dialogs.value.find((d) => d.chatId === dialog.chatId);
   const dlg = fresh ?? dialog;
+
+  if (addToHistory && activeChat.value && activeChat.value.chatId !== dlg.chatId) {
+    chatNavStack.value.push(activeChat.value);
+  } else if (!addToHistory) {
+    chatNavStack.value = [];
+  }
   activeChatId.value = dlg.chatId;
   activeChat.value = dlg;
   saveMessengerState();
@@ -2228,7 +2271,14 @@ function markChatRead(chatId: string) {
 }
 
 function backToDialogs() {
-  showMobileChat.value = false;
+  const prev = chatNavStack.value.pop();
+  if (prev) {
+    const remainingStack = [...chatNavStack.value];
+    openChat(prev); // openChat clears the stack; we restore the remaining history below
+    chatNavStack.value = remainingStack;
+  } else {
+    showMobileChat.value = false;
+  }
 }
 
 async function fetchMessages(fresh = false) {

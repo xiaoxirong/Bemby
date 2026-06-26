@@ -1099,6 +1099,40 @@ export async function resolvePeer(
 
 export type JoinResult = { joined: true } | { requestSent: true };
 
+// Opens a bot chat and sends the startParam via messages.StartBot (mirrors clicking a t.me/bot?start=PARAM link).
+export async function startBot(
+  entry: LiveEntry,
+  username: string,
+  startParam: string,
+): Promise<TgDialogItem> {
+  const query = username.startsWith("@") ? username : `@${username}`;
+  const entity = await entry.client.getEntity(query);
+  if (!(entity instanceof Api.User) || !entity.bot) {
+    throw new Error("Not a bot");
+  }
+  const chatId = `u${entity.id}`;
+  entry.entityCache.set(chatId, entity);
+
+  await entry.client.invoke(
+    new Api.messages.StartBot({
+      bot: entity as any,
+      peer: entity as any,
+      randomId: BigInt(Date.now() % 1_000_000_000) as any,
+      startParam,
+    }),
+  );
+
+  const name = [entity.firstName, entity.lastName].filter(Boolean).join(" ") || username;
+  return {
+    chatId,
+    name,
+    type: "bot",
+    username: entity.username ?? null,
+    unreadCount: 0,
+    lastMessage: null,
+  };
+}
+
 // Resolves a mini app URL to an authenticated web app URL.
 // Handles two cases:
 //   - t.me/BotName?startapp=HASH  -- uses RequestWebView with the start param

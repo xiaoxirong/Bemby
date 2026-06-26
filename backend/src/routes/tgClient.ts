@@ -35,6 +35,7 @@ import {
   fetchAvatarsBatch,
   checkMembership,
   resolveWebApp,
+  startBot,
 } from "../tg/liveClient";
 import type { Response } from "express";
 
@@ -500,6 +501,20 @@ router.post("/:accountId/join/:chatId", async (req, res) => {
     const entry = await getLiveClient(accountId);
     const result = await joinChannel(entry, chatId);
     res.json({ ok: true, ...result });
+  } catch (err: any) {
+    tgError(err, accountId, res);
+  }
+});
+
+// POST /:accountId/start-bot/:username -- open bot and send startParam (t.me/bot?start=PARAM)
+router.post("/:accountId/start-bot/:username", async (req, res) => {
+  const accountId = Number(req.params.accountId);
+  const username = req.params.username;
+  const { startParam } = req.body as { startParam: string };
+  try {
+    const entry = await getLiveClient(accountId);
+    const dialog = await startBot(entry, username, startParam);
+    res.json(dialog);
   } catch (err: any) {
     tgError(err, accountId, res);
   }

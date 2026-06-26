@@ -856,6 +856,13 @@ export const tgClientApi = {
       }>(`/tg-client/${accountId}/membership/${encodeURIComponent(chatId)}`)
       .then((r) => r.data),
 
+  startBot: (accountId: number, username: string, startParam: string) =>
+    api
+      .post<TgDialog>(`/tg-client/${accountId}/start-bot/${encodeURIComponent(username)}`, {
+        startParam,
+      })
+      .then((r) => r.data),
+
   webviewResolve: (accountId: number, url: string, botChatId?: string | null) =>
     api
       .post<{ webAppUrl: string }>(`/tg-client/${accountId}/webview/resolve`, {
