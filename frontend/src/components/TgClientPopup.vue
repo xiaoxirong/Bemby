@@ -478,13 +478,12 @@
                 <div class="tgc-join-pending">
                   <i class="fa-solid fa-clock"></i>
                   <span
-                    >Complete the bot task above, then your membership will be
-                    confirmed automatically.</span
+                    >Complete the verification task -- check the chat above or a private message from the group bot.</span
                   >
                 </div>
                 <button
                   class="tgc-join-check-btn"
-                  @click="checkMembershipStatus"
+                  @click="checkMembershipStatus(); refreshMessages()"
                 >
                   <i class="fa-solid fa-rotate"></i> Check now
                 </button>
@@ -499,8 +498,8 @@
                   <span class="tgc-spinner tgc-spinner-sm"></span> Joining...
                 </span>
                 <span v-else>
-                  <i class="fa-solid fa-right-to-bracket"></i> Join
-                  {{ activeChat?.type === "channel" ? "Channel" : "Group" }}
+                  <i class="fa-solid fa-right-to-bracket"></i>
+                  {{ activeChat?.type === "channel" ? "Subscribe" : "Join Group" }}
                 </span>
               </button>
             </div>
@@ -1621,11 +1620,39 @@ async function checkMembershipStatus(): Promise<void> {
     if (member && activeChat.value) {
       stopMembershipPoll();
       joinRequestSent.value = false;
-      activeChat.value = { ...activeChat.value, left: false };
+      const joined = { ...activeChat.value, left: false };
+      activeChat.value = joined;
+      if (!dialogs.value.find((d) => d.chatId === joined.chatId)) {
+        dialogs.value.unshift(joined);
+      }
       await fetchMessages(true);
     }
   } catch {
     // silently ignore -- will retry on next poll
+  }
+}
+
+// After a join request, detect if a verification bot sent a private message and open it.
+async function checkForVerificationBot(joinTimeSec: number) {
+  if (!joinRequestSent.value || !selectedAccountId.value) return;
+  try {
+    const fresh = await tgClientApi.dialogs(selectedAccountId.value, { limit: 30 });
+    const verifyBot = fresh.find(
+      (d) =>
+        d.type === "bot" &&
+        d.lastMessage !== null &&
+        d.lastMessage.date >= joinTimeSec - 5 && // message within 5s of the join
+        d.chatId !== activeChatId.value,
+    );
+    if (verifyBot) {
+      // Add to sidebar so it shows up in the list
+      if (!dialogs.value.find((d) => d.chatId === verifyBot.chatId)) {
+        dialogs.value.unshift(verifyBot);
+      }
+      await openChat(verifyBot, true); // addToHistory so Back returns to the group
+    }
+  } catch {
+    // silently ignore
   }
 }
 
@@ -1645,13 +1672,29 @@ async function joinCurrentChat() {
       activeChatId.value,
     );
     if (result.requestSent) {
+      const joinTimeSec = Math.floor(Date.now() / 1000);
       joinRequestSent.value = true;
       startMembershipPoll();
-      // Fetch so any verification/bot message sent by the group is visible immediately
+      // Initial fetch -- bot may not have replied yet
       await fetchMessages(true);
+      // Re-fetch at 2s and 6s so the bot's verification message appears as soon as it arrives
+      setTimeout(refreshMessages, 2_000);
+      setTimeout(refreshMessages, 6_000);
+      // Check if a verification bot sent a private message and open it automatically
+      setTimeout(() => checkForVerificationBot(joinTimeSec), 3_000);
+      setTimeout(() => checkForVerificationBot(joinTimeSec), 8_000);
     } else {
-      activeChat.value = { ...activeChat.value, left: false };
+      const joinTimeSec = Math.floor(Date.now() / 1000);
+      const joined = { ...activeChat.value, left: false };
+      activeChat.value = joined;
+      // Add to dialogs list so the "not-in-dialogs = not a member" heuristic stays correct
+      if (!dialogs.value.find((d) => d.chatId === joined.chatId)) {
+        dialogs.value.unshift(joined);
+      }
       await fetchMessages(true);
+      setTimeout(refreshMessages, 2_000);
+      // Check if a bot immediately sent a verification private message
+      setTimeout(() => checkForVerificationBot(joinTimeSec), 3_000);
     }
   } catch (e: any) {
     const raw = e?.response?.data?.error ?? e?.message ?? "Failed to join";
@@ -2223,7 +2266,19 @@ async function openChat(dialog: TgDialog, addToHistory = false) {
   cancelBgDialogLoad();
   // Prefer fresh dialog data from the loaded list (has accurate unreadCount)
   const fresh = dialogs.value.find((d) => d.chatId === dialog.chatId);
-  const dlg = fresh ?? dialog;
+  let dlg = fresh ?? dialog;
+
+  // Channels/groups not in the subscribed dialogs list = user is not a member.
+  // The Telegram API only sets `left: true` when the user explicitly left; for channels
+  // never joined the flag is absent, so Boolean(c.left) returns false incorrectly.
+  // Dialogs list contains only subscribed chats, so absence there is the reliable signal.
+  if (
+    !fresh &&
+    dialogs.value.length > 0 &&
+    (dlg.type === "channel" || dlg.type === "group")
+  ) {
+    dlg = { ...dlg, left: true };
+  }
 
   if (addToHistory && activeChat.value && activeChat.value.chatId !== dlg.chatId) {
     chatNavStack.value.push(activeChat.value);
