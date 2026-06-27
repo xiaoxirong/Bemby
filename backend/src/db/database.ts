@@ -313,7 +313,8 @@ try {
         created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
         config                TEXT,
         start_command         TEXT    NOT NULL DEFAULT '/start',
-        checkin_button        TEXT    NOT NULL DEFAULT '签到'
+        checkin_button        TEXT    NOT NULL DEFAULT '签到',
+        template_id           INTEGER REFERENCES job_templates(id) ON DELETE SET NULL
       );
       INSERT INTO jobs_v2 SELECT * FROM jobs;
       DROP TABLE jobs;
