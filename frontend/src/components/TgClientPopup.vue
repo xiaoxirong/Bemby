@@ -1024,9 +1024,14 @@ const loadingDialogs = ref(false);
 const dialogError = ref("");
 const reconnecting = ref(false);
 
-// Client-side avatar cache: `${accountId}:${chatId}` -> base64 jpeg string, or '' (no avatar).
-// Undefined key = not yet fetched.
+// Avatar cache keyed by chatId only -- shared across all accounts.
+// '' = fetched but no avatar exists. Undefined = not yet fetched.
 const avatarCache = reactive(new Map<string, string>());
+const avatarQueue: string[] = [];
+const avatarQueued = new Set<string>(); // O(1) membership check for the queue
+const avatarFetching = new Set<string>(); // currently in-flight
+const AVATAR_CONCURRENCY = 3;
+let avatarActive = 0;
 
 const searchQuery = ref("");
 const searchResults = ref<TgDialog[] | null>(null);
@@ -1137,10 +1142,6 @@ function startBgDialogLoad(accountId: number) {
       );
       dialogs.value = allDialogs.map((d) =>
         localZeroed.has(d.chatId) ? { ...d, unreadCount: 0 } : d,
-      );
-      loadAvatars(
-        accountId,
-        allDialogs.map((d) => d.chatId),
       );
     })
     .catch(() => {
@@ -1311,34 +1312,40 @@ async function ctxPin(pinned: boolean) {
   }
 }
 
-function avatarUrl(chatId: string) {
-  if (!selectedAccountId.value) return "";
-  return tgClientApi.avatarUrl(selectedAccountId.value, chatId);
-}
-
 // Returns a data URI from the local cache, or '' if not available yet.
+// Enqueues a fetch the first time a chatId is seen (max 3 concurrent).
 function avatarSrc(chatId: string): string {
-  if (!selectedAccountId.value) return "";
-  const data = avatarCache.get(`${selectedAccountId.value}:${chatId}`);
-  return data ? `data:image/jpeg;base64,${data}` : "";
+  if (avatarCache.has(chatId)) {
+    const data = avatarCache.get(chatId);
+    return data ? `data:image/jpeg;base64,${data}` : "";
+  }
+  if (!avatarFetching.has(chatId) && !avatarQueued.has(chatId) && selectedAccountId.value) {
+    avatarQueue.push(chatId);
+    avatarQueued.add(chatId);
+    drainAvatarQueue();
+  }
+  return "";
 }
 
-async function loadAvatars(
-  accountId: number,
-  chatIds: string[],
-): Promise<void> {
-  const missing = chatIds.filter(
-    (id) => !avatarCache.has(`${accountId}:${id}`),
-  );
-  if (!missing.length) return;
-  // Mark as pending to avoid duplicate requests
-  for (const id of missing) avatarCache.set(`${accountId}:${id}`, "");
-  try {
-    const result = await tgClientApi.avatarsBatch(accountId, missing);
-    for (const id of missing) {
-      if (result[id]) avatarCache.set(`${accountId}:${id}`, result[id]);
-    }
-  } catch {}
+function drainAvatarQueue(): void {
+  while (avatarActive < AVATAR_CONCURRENCY && avatarQueue.length > 0) {
+    const chatId = avatarQueue.shift()!;
+    avatarQueued.delete(chatId);
+    // Skip if cached while waiting in queue
+    if (avatarCache.has(chatId) || avatarFetching.has(chatId)) continue;
+    if (!selectedAccountId.value) { avatarQueue.unshift(chatId); avatarQueued.add(chatId); break; }
+    avatarActive++;
+    avatarFetching.add(chatId);
+    const accountId = selectedAccountId.value;
+    tgClientApi.avatarsBatch(accountId, [chatId])
+      .then((result) => { avatarCache.set(chatId, result[chatId] ?? ""); })
+      .catch(() => { avatarCache.set(chatId, ""); })
+      .finally(() => {
+        avatarFetching.delete(chatId);
+        avatarActive--;
+        drainAvatarQueue();
+      });
+  }
 }
 
 async function openProfile() {
@@ -1369,8 +1376,6 @@ async function openProfile() {
         memberCount: null,
       };
     }
-    if (selectedAccountId.value && profileDetails.value)
-      loadAvatars(selectedAccountId.value, [profileDetails.value.chatId]);
   } finally {
     profileLoading.value = false;
   }
@@ -2318,11 +2323,6 @@ async function loadDialogs() {
     tgFolders.value = folders;
     loadingDialogs.value = false;
 
-    // Batch-fetch all dialog avatars in the background (no individual HTTP requests)
-    loadAvatars(
-      accountId,
-      firstBatch.map((d) => d.chatId),
-    );
   } catch (e: any) {
     const raw =
       e?.response?.data?.error ?? e?.message ?? "Failed to load chats";
@@ -2775,11 +2775,6 @@ function startLiveSocket() {
       else if (data.type === "dialogs" && Array.isArray(data.dialogs)) {
         const updated = data.dialogs as TgDialog[];
         dialogs.value = updated;
-        if (selectedAccountId.value)
-          loadAvatars(
-            selectedAccountId.value,
-            updated.map((d) => d.chatId),
-          );
       }
     } catch {
       /* ignore parse errors */
