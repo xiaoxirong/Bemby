@@ -104,6 +104,7 @@ jobs:
           else
             docker buildx imagetools create \
               -t "${IMG}:${VER}" \
+              -t "${IMG}:dev" \
               "${IMG}:${VER}-amd64" \
               "${IMG}:${VER}-arm64"
           fi
