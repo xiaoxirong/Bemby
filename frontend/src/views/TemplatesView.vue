@@ -8,10 +8,13 @@
             <i :class="sharedMulti ? 'fa-solid fa-check' : 'fa-solid fa-share-nodes'"></i>
             {{ t('templates.shareSelectedBtn').replace('{n}', String(selectedIds.length)) }}
           </button>
-          <button class="btn btn-ghost" @click="bulkEnableTpls"><i class="fa-solid fa-circle-check"></i> {{ t('templates.bulkEnable').replace('{n}', String(selectedIds.length)) }}</button>
-          <button class="btn btn-ghost" @click="confirmBulkDisableTpls = true"><i class="fa-solid fa-ban"></i> {{ t('templates.bulkDisable').replace('{n}', String(selectedIds.length)) }}</button>
+          <button class="btn btn-secondary" @click="bulkEnableTpls"><i class="fa-solid fa-circle-check"></i> {{ t('templates.bulkEnable').replace('{n}', String(selectedIds.length)) }}</button>
+          <button class="btn btn-secondary" @click="confirmBulkDisableTpls = true"><i class="fa-solid fa-ban"></i> {{ t('templates.bulkDisable').replace('{n}', String(selectedIds.length)) }}</button>
           <button class="btn btn-danger" @click="confirmBulkDeleteTpls = true"><i class="fa-solid fa-trash"></i> {{ t('templates.bulkDelete').replace('{n}', String(selectedIds.length)) }}</button>
         </template>
+        <button v-if="sortedTemplates.length" class="btn btn-secondary" @click="toggleAll">
+          {{ allSelected ? t('common.deselectAll') : t('common.selectAll') }}
+        </button>
         <button class="btn btn-secondary" @click="openImport"><i class="fa-solid fa-file-import"></i> {{ t('templates.importBtn') }}</button>
         <button class="btn btn-primary" @click="openAdd"><i class="fa-solid fa-plus"></i> {{ t('templates.addBtn') }}</button>
       </div>
@@ -22,9 +25,6 @@
         <table>
           <thead>
             <tr>
-              <th style="width:36px">
-                <input type="checkbox" :checked="allSelected" :indeterminate="selectedIds.length > 0 && !allSelected" @change="toggleAll" />
-              </th>
               <th class="th-sort" :class="sortKey === 'name' ? 'sort-active' : ''" @click="setSort('name')">{{ t('common.name') }} <span class="sort-icon">{{ sortIcon('name') }}</span></th>
               <th class="th-sort" :class="sortKey === 'type' ? 'sort-active' : ''" @click="setSort('type')">{{ t('templates.colType') }} <span class="sort-icon">{{ sortIcon('type') }}</span></th>
               <th class="th-sort" :class="sortKey === 'enabled' ? 'sort-active' : ''" @click="setSort('enabled')">{{ t('templates.colEnabled') }} <span class="sort-icon">{{ sortIcon('enabled') }}</span></th>
@@ -35,24 +35,29 @@
           </thead>
           <tbody>
             <tr v-if="!sortedTemplates.length">
-              <td colspan="7" class="empty">{{ t('templates.noTemplates') }}</td>
+              <td colspan="6" class="empty">{{ t('templates.noTemplates') }}</td>
             </tr>
-            <tr v-for="tpl in sortedTemplates" :key="tpl.id">
-              <td><input type="checkbox" :checked="selectedIds.includes(tpl.id)" @change="toggleSelect(tpl.id)" /></td>
+            <tr
+              v-for="tpl in sortedTemplates"
+              :key="tpl.id"
+              style="cursor:pointer"
+              :class="selectedIds.includes(tpl.id) ? 'row-selected' : ''"
+              @click="toggleSelect(tpl.id)"
+            >
               <td>{{ tpl.name }}</td>
               <td><span :class="jobTypeBadge(tpl.jobType)">{{ t(`logs.jobType.${tpl.jobType}`) }}</span></td>
               <td>
                 <span
                   :class="tpl.enabled ? 'badge badge-green' : 'badge badge-grey'"
                   style="cursor:pointer;user-select:none"
-                  @click="toggleTemplateEnabled(tpl)"
+                  @click.stop="toggleTemplateEnabled(tpl)"
                 >
                   {{ tpl.enabled ? t('common.yes') : t('common.no') }}
                 </span>
               </td>
               <td class="col-hide-mobile">{{ tpl.jobType === 'embywatch' ? tpl.botUsername : '@' + tpl.botUsername }}</td>
               <td class="col-hide-mobile">{{ tpl.linkedJobCount ?? 0 }}</td>
-              <td>
+              <td @click.stop>
                 <div class="actions hide-mobile">
                   <button
                     v-if="(tpl.linkedJobCount ?? 0) > 0"
@@ -1286,6 +1291,14 @@ async function doImport() {
 
 .th-sort.sort-active {
   color: #3730a3;
+}
+
+tbody tr:nth-child(even):not(.row-selected) td {
+  background: #f0f2f5;
+}
+
+.row-selected td {
+  background: #bfdbfe;
 }
 
 .sort-icon {

@@ -3,6 +3,9 @@
     <div class="page-header">
       <h2 class="page-title">{{ t("accounts.title") }}</h2>
       <div class="page-header-actions">
+        <button v-if="accounts.length" class="btn btn-secondary" @click="toggleSelectAll">
+          {{ allSelected ? t("common.deselectAll") : t("common.selectAll") }}
+        </button>
         <button
           v-if="selectedIds.size > 0"
           class="btn btn-secondary"
@@ -38,14 +41,6 @@
           <thead>
             <tr>
               <th style="width: 20px"></th>
-              <th style="width: 36px">
-                <input
-                  type="checkbox"
-                  :checked="allSelected"
-                  :indeterminate="someSelected"
-                  @change="toggleSelectAll"
-                />
-              </th>
               <th>{{ t("common.name") }}</th>
               <th>{{ t("accounts.colPhone") }}</th>
               <th class="col-hide-mobile">{{ t("accounts.colTgName") }}</th>
@@ -56,7 +51,7 @@
           </thead>
           <tbody>
             <tr v-if="!accounts.length">
-              <td colspan="8" class="empty">{{ t("accounts.noAccounts") }}</td>
+              <td colspan="7" class="empty">{{ t("accounts.noAccounts") }}</td>
             </tr>
             <tr
               v-for="(a, idx) in accounts"
@@ -64,8 +59,11 @@
               :class="[
                 a.disabled ? 'row-disabled' : '',
                 dragOverIdx === idx ? 'drag-over' : '',
+                selectedIds.has(a.id) ? 'row-selected' : '',
               ]"
+              style="cursor:pointer"
               draggable="true"
+              @click="toggleSelect(a.id)"
               @dragstart="onDragStart(idx, $event)"
               @dragover.prevent="dragOverIdx = idx"
               @dragleave="dragOverIdx = null"
@@ -74,13 +72,6 @@
             >
               <td class="drag-handle" title="Drag to reorder">
                 <i class="fa-solid fa-grip-vertical"></i>
-              </td>
-              <td>
-                <input
-                  type="checkbox"
-                  :checked="selectedIds.has(a.id)"
-                  @change="toggleSelect(a.id)"
-                />
               </td>
               <td>
                 {{ a.name }}
@@ -113,23 +104,25 @@
                 >
               </td>
               <td>{{ a.phoneNumber }}</td>
-              <td class="tg-name-cell col-hide-mobile">
-                <span v-if="metaLoading.has(a.id)" class="tg-name-loading">
-                  <span class="spinner-xs"></span>
-                </span>
-                <template v-else-if="a.tgDisplayName">
-                  <span class="tg-name-text">{{ a.tgDisplayName }}</span>
-                  <span v-if="a.tgUsername" class="tg-name-username">@{{ a.tgUsername }}</span>
-                </template>
-                <button
-                  v-if="a.authStatus === 'authenticated'"
-                  class="btn btn-xs btn-ghost btn-icon tg-name-refresh"
-                  :disabled="metaLoading.has(a.id)"
-                  title="Refresh TG name"
-                  @click="fetchMeta(a.id)"
-                >
-                  <i class="fa-solid fa-arrows-rotate"></i>
-                </button>
+              <td class="col-hide-mobile">
+                <div class="tg-name-cell">
+                  <span v-if="metaLoading.has(a.id)" class="tg-name-loading">
+                    <span class="spinner-xs"></span>
+                  </span>
+                  <template v-else-if="a.tgDisplayName">
+                    <span class="tg-name-text">{{ a.tgDisplayName }}</span>
+                    <span v-if="a.tgUsername" class="tg-name-username">@{{ a.tgUsername }}</span>
+                  </template>
+                  <button
+                    v-if="a.authStatus === 'authenticated'"
+                    class="btn btn-xs btn-ghost btn-icon tg-name-refresh"
+                    :disabled="metaLoading.has(a.id)"
+                    title="Refresh TG name"
+                    @click.stop="fetchMeta(a.id)"
+                  >
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                  </button>
+                </div>
               </td>
               <td>
                 <span :class="statusBadge(a.authStatus)">{{
@@ -1208,6 +1201,14 @@ tr:hover .tg-name-refresh {
 
 .row-disabled td {
   opacity: 0.5;
+}
+
+tbody tr:nth-child(even):not(.row-selected) td {
+  background: #f0f2f5;
+}
+
+.row-selected td {
+  background: #bfdbfe;
 }
 
 .status-row {

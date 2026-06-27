@@ -39,6 +39,8 @@ const zh = {
     custom: "自定义",
     enable: "启用",
     disable: "禁用",
+    selectAll: "全选",
+    deselectAll: "取消全选",
   },
   login: {
     subtitle: "登录管理面板",
@@ -521,6 +523,8 @@ const en: typeof zh = {
     custom: "Custom",
     enable: "Enable",
     disable: "Disable",
+    selectAll: "Select all",
+    deselectAll: "Deselect all",
   },
   login: {
     subtitle: "Sign in to access the admin panel",

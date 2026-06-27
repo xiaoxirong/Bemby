@@ -34,12 +34,15 @@
           <option value="">{{ t('jobs.allBotUrlTpl') }}</option>
           <option v-for="opt in botUrlTplOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
+        <button v-if="sortedJobs.length" class="btn btn-sm btn-secondary" style="margin-left:auto" @click="toggleAllJobs">
+          {{ allJobsSelected ? t('common.deselectAll') : t('common.selectAll') }}
+        </button>
       </div>
       <!-- Bulk action bar -->
       <div v-if="selectedJobIds.length" class="bulk-bar">
         <span class="bulk-count">{{ t('jobs.selectedCount').replace('{n}', String(selectedJobIds.length)) }}</span>
-        <button class="btn btn-sm btn-ghost" @click="bulkEnableJobs"><i class="fa-solid fa-circle-check"></i> {{ t('jobs.bulkEnable').replace('{n}', String(selectedJobIds.length)) }}</button>
-        <button class="btn btn-sm btn-ghost" @click="confirmBulkDisableJobs = true"><i class="fa-solid fa-ban"></i> {{ t('jobs.bulkDisable').replace('{n}', String(selectedJobIds.length)) }}</button>
+        <button class="btn btn-sm btn-secondary" @click="bulkEnableJobs"><i class="fa-solid fa-circle-check"></i> {{ t('jobs.bulkEnable').replace('{n}', String(selectedJobIds.length)) }}</button>
+        <button class="btn btn-sm btn-secondary" @click="confirmBulkDisableJobs = true"><i class="fa-solid fa-ban"></i> {{ t('jobs.bulkDisable').replace('{n}', String(selectedJobIds.length)) }}</button>
         <button class="btn btn-sm btn-danger" @click="confirmBulkDeleteJobs = true"><i class="fa-solid fa-trash"></i> {{ t('jobs.bulkDelete').replace('{n}', String(selectedJobIds.length)) }}</button>
         <button class="btn btn-sm btn-ghost" style="margin-left:auto" @click="selectedJobIds = []"><i class="fa-solid fa-xmark"></i></button>
       </div>
@@ -47,7 +50,6 @@
         <table>
           <thead>
             <tr>
-              <th style="width:36px"><input type="checkbox" :checked="allJobsSelected" :indeterminate="selectedJobIds.length > 0 && !allJobsSelected" @change="toggleAllJobs" /></th>
               <th class="th-sort" :class="sortKey === 'name' ? 'sort-active' : ''" @click="setSort('name')">{{ t('common.name') }} <span class="sort-icon">{{ sortIcon('name') }}</span></th>
               <th class="th-sort" :class="sortKey === 'account' ? 'sort-active' : ''" @click="setSort('account')">{{ t('jobs.colAccount') }} <span class="sort-icon">{{ sortIcon('account') }}</span></th>
               <th class="th-sort" :class="sortKey === 'type' ? 'sort-active' : ''" @click="setSort('type')">{{ t('jobs.colType') }} <span class="sort-icon">{{ sortIcon('type') }}</span></th>
@@ -59,15 +61,14 @@
           </thead>
           <tbody>
             <tr v-if="!sortedJobs.length">
-              <td colspan="8" class="empty">{{ t('jobs.noJobs') }}</td>
+              <td colspan="7" class="empty">{{ t('jobs.noJobs') }}</td>
             </tr>
             <tr
               v-for="j in sortedJobs" :key="j.id"
               style="cursor:pointer"
-              :class="selectedJobId === j.id ? 'row-selected' : ''"
-              @click="selectedJobId = selectedJobId === j.id ? null : j.id"
+              :class="selectedJobIds.includes(j.id) ? 'row-selected' : ''"
+              @click="toggleJobSelect(j.id)"
             >
-              <td @click.stop><input type="checkbox" :checked="selectedJobIds.includes(j.id)" @change="toggleJobSelect(j.id)" /></td>
               <td>{{ j.name }}</td>
               <td>{{ j.accountName ?? j.accountId }}</td>
               <td><span :class="jobTypeBadge(j.jobType)">{{ t(`logs.jobType.${j.jobType}`) }}</span></td>
@@ -665,7 +666,6 @@ const botUrlTplOptions = computed(() => {
 
 const sortKey = usePersistedRef<string>('bemby:jobs:sortKey', '');
 const sortDir = usePersistedRef<'asc' | 'desc'>('bemby:jobs:sortDir', 'asc');
-const selectedJobId = ref<number | null>(null);
 const actionMenuJob = ref<Job | null>(null);
 const confirmDisableJob = ref<Job | null>(null);
 const selectedJobIds = ref<number[]>([]);
@@ -1389,8 +1389,12 @@ onUnmounted(() => {
   color: #6366f1;
 }
 
+tbody tr:nth-child(even):not(.row-selected) td {
+  background: #f0f2f5;
+}
+
 .row-selected td {
-  background: #eff6ff;
+  background: #bfdbfe;
 }
 
 .badge-tpl {

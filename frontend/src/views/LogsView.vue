@@ -52,10 +52,10 @@
             <tr v-if="!filteredLogs.length">
               <td colspan="5" class="empty">{{ t("logs.noLogs") }}</td>
             </tr>
-            <template v-for="l in filteredLogs" :key="l.id">
+            <template v-for="(l, idx) in filteredLogs" :key="l.id">
               <tr
                 style="cursor: pointer; user-select: none"
-                :class="[expandedId === l.id ? 'row-expanded' : '', l.retired ? 'row-retired' : '']"
+                :class="[expandedId === l.id ? 'row-expanded' : idx % 2 === 1 ? 'row-even' : '', l.retired ? 'row-retired' : '']"
                 @click="toggleDetail(l)"
               >
                 <td class="time-cell">
@@ -1172,6 +1172,10 @@ function fmtSeconds(s: number): string {
 <style scoped>
 .row-expanded td {
   background: #f0f4ff;
+}
+
+.row-even td {
+  background: #f0f2f5;
 }
 
 .row-retired td {
