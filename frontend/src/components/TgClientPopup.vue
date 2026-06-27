@@ -1029,6 +1029,8 @@ const inputText = ref("");
 
 const joiningChannel = ref(false);
 const joinRequestSent = ref(false);
+// chatId of the group/channel whose join request is pending -- survives chat navigation
+const pendingJoinChatId = ref<string | null>(null);
 let membershipPollTimer: ReturnType<typeof setInterval> | null = null;
 
 const showContacts = ref(false);
@@ -1610,22 +1612,27 @@ function stopMembershipPoll() {
 }
 
 async function checkMembershipStatus(): Promise<void> {
-  if (!selectedAccountId.value || !activeChatId.value || !joinRequestSent.value)
-    return;
+  if (!selectedAccountId.value || !joinRequestSent.value) return;
+  // Use the stored group chatId -- activeChatId may be the verification bot DM, not the group
+  const groupChatId = pendingJoinChatId.value ?? activeChatId.value;
+  if (!groupChatId) return;
   try {
-    const { member } = await tgClientApi.membership(
-      selectedAccountId.value,
-      activeChatId.value,
-    );
-    if (member && activeChat.value) {
+    const { member } = await tgClientApi.membership(selectedAccountId.value, groupChatId);
+    if (member) {
       stopMembershipPoll();
       joinRequestSent.value = false;
-      const joined = { ...activeChat.value, left: false };
-      activeChat.value = joined;
-      if (!dialogs.value.find((d) => d.chatId === joined.chatId)) {
-        dialogs.value.unshift(joined);
+      pendingJoinChatId.value = null;
+      // Update the group in the dialogs list
+      const existing = dialogs.value.find((d) => d.chatId === groupChatId);
+      const joined = existing ? { ...existing, left: false } : null;
+      if (joined) {
+        dialogs.value = dialogs.value.map((d) => (d.chatId === groupChatId ? joined : d));
       }
-      await fetchMessages(true);
+      // If currently viewing the group, refresh it
+      if (activeChatId.value === groupChatId && activeChat.value) {
+        activeChat.value = { ...activeChat.value, left: false };
+        await fetchMessages(true);
+      }
     }
   } catch {
     // silently ignore -- will retry on next poll
@@ -1641,15 +1648,22 @@ async function checkForVerificationBot(joinTimeSec: number) {
       (d) =>
         d.type === "bot" &&
         d.lastMessage !== null &&
-        d.lastMessage.date >= joinTimeSec - 5 && // message within 5s of the join
+        d.lastMessage.date >= joinTimeSec - 5 &&
         d.chatId !== activeChatId.value,
     );
     if (verifyBot) {
-      // Add to sidebar so it shows up in the list
       if (!dialogs.value.find((d) => d.chatId === verifyBot.chatId)) {
         dialogs.value.unshift(verifyBot);
       }
-      await openChat(verifyBot, true); // addToHistory so Back returns to the group
+      // Save join state -- openChat will clear it
+      const savedGroupChatId = pendingJoinChatId.value;
+      await openChat(verifyBot, true);
+      // Restore join state so the membership poll keeps checking the group
+      if (savedGroupChatId) {
+        joinRequestSent.value = true;
+        pendingJoinChatId.value = savedGroupChatId;
+        startMembershipPoll();
+      }
     }
   } catch {
     // silently ignore
@@ -1674,6 +1688,7 @@ async function joinCurrentChat() {
     if (result.requestSent) {
       const joinTimeSec = Math.floor(Date.now() / 1000);
       joinRequestSent.value = true;
+      pendingJoinChatId.value = activeChatId.value;
       startMembershipPoll();
       // Initial fetch -- bot may not have replied yet
       await fetchMessages(true);
@@ -1755,8 +1770,13 @@ async function clickInlineButton(
   } catch (e: any) {
     const raw = e?.response?.data?.error ?? e?.message ?? "Button click failed";
     if (raw.includes("MESSAGE_ID_INVALID")) {
-      copyToast.value = "Message was updated by the bot -- refreshing...";
-      refreshMessages();
+      if (joinRequestSent.value && activeChat.value?.left) {
+        // Non-member clicking a button in a group they haven't been approved for yet
+        copyToast.value = "Complete the verification in the bot's private message first.";
+      } else {
+        copyToast.value = "Message was updated by the bot -- refreshing...";
+        refreshMessages();
+      }
     } else {
       copyToast.value = friendlyTgError(raw);
     }
@@ -1770,8 +1790,8 @@ async function clickInlineButton(
     // Re-fetch twice to pick up edits.
     setTimeout(refreshMessages, 1200);
     setTimeout(refreshMessages, 3500);
-    // If waiting for approval, check membership after the bot interaction completes
-    if (joinRequestSent.value) {
+    // Check membership after bot interaction -- covers both the group view and the bot DM
+    if (joinRequestSent.value && pendingJoinChatId.value) {
       setTimeout(checkMembershipStatus, 4000);
     }
   }
@@ -1784,7 +1804,7 @@ async function refreshMessages() {
     const msgs = await tgClientApi.messages(
       selectedAccountId.value,
       activeChatId.value,
-      { limit: 20 },
+      { limit: 20, fresh: 1 },
     );
     const fresh = msgs.reverse(); // oldest first
     if (!fresh.length) return;
@@ -1810,6 +1830,19 @@ async function refreshMessages() {
       }
     }
     if (appended) await scrollBottom(false);
+
+    // Sync the sidebar last-message for this chat -- the bot may have edited it
+    const chatId = activeChatId.value;
+    const newestMsg = messages.value[messages.value.length - 1];
+    if (newestMsg && chatId) {
+      const di = dialogs.value.findIndex((d) => d.chatId === chatId);
+      if (di !== -1) {
+        dialogs.value[di] = {
+          ...dialogs.value[di],
+          lastMessage: { text: newestMsg.text, date: newestMsg.date, fromMe: newestMsg.fromMe },
+        };
+      }
+    }
   } catch {
     // Silent -- best effort
   }
@@ -2300,6 +2333,7 @@ async function openChat(dialog: TgDialog, addToHistory = false) {
   replyingTo.value = null;
   botCommands.value = [];
   joinRequestSent.value = false;
+  pendingJoinChatId.value = null;
   stopMembershipPoll();
   await fetchMessages();
   markChatRead(dlg.chatId);
@@ -2329,8 +2363,16 @@ function backToDialogs() {
   const prev = chatNavStack.value.pop();
   if (prev) {
     const remainingStack = [...chatNavStack.value];
-    openChat(prev); // openChat clears the stack; we restore the remaining history below
+    // Save before openChat clears join state
+    const savedPendingId = pendingJoinChatId.value;
+    openChat(prev);
     chatNavStack.value = remainingStack;
+    // If navigating back to the group that has a pending join, restore the pending state
+    if (savedPendingId && prev.chatId === savedPendingId) {
+      joinRequestSent.value = true;
+      pendingJoinChatId.value = savedPendingId;
+      startMembershipPoll();
+    }
   } else {
     showMobileChat.value = false;
   }

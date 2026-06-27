@@ -943,14 +943,17 @@ export async function clickButton(
   await ensureEntityCached(entry, chatId);
   const entity = entry.entityCache.get(chatId);
   if (!entity) throw new Error("Chat not found");
+  const dataBytes = Buffer.from(data, "base64");
+  console.log(`[button] chatId=${chatId} msgId=${msgId} data_hex=${dataBytes.toString("hex")} data_utf8=${dataBytes.toString("utf8")}`);
   const result = await client.invoke(
     new Api.messages.GetBotCallbackAnswer({
       peer: entity as any,
       msgId,
-      data: Buffer.from(data, "base64"),
+      data: dataBytes,
       game: false,
     }),
   );
+  console.log(`[button] result alert=${result.alert} message=${JSON.stringify(result.message)} url=${result.url ?? "null"}`);
   return {
     alert: result.alert ?? false,
     message: result.message ?? null,
