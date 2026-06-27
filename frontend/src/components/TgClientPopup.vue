@@ -1033,6 +1033,13 @@ const joinRequestSent = ref(false);
 const pendingJoinChatId = ref<string | null>(null);
 let membershipPollTimer: ReturnType<typeof setInterval> | null = null;
 
+// Watcher that keeps re-fetching the last bot message while the bot is still editing it
+let botMsgWatchTimer: ReturnType<typeof setTimeout> | null = null;
+let botMsgWatchGen = 0;
+let botMsgWatchText = '';
+let botMsgWatchStaleTicks = 0;
+let botMsgWatchTotalTicks = 0;
+
 const showContacts = ref(false);
 const contacts = ref<TgContact[]>([]);
 const loadingContacts = ref(false);
@@ -1611,6 +1618,54 @@ function stopMembershipPoll() {
   }
 }
 
+function stopBotMsgWatch() {
+  botMsgWatchGen++;
+  if (botMsgWatchTimer !== null) {
+    clearTimeout(botMsgWatchTimer);
+    botMsgWatchTimer = null;
+  }
+}
+
+// Start polling the active bot chat's last message every 2s until it stops changing.
+// Safe to call multiple times -- no-ops if a watch is already scheduled.
+function scheduleBotMsgWatch() {
+  const lastMsg = messages.value[messages.value.length - 1];
+  if (!lastMsg || lastMsg.fromMe || activeChat.value?.type !== 'bot') return;
+  if (botMsgWatchTimer !== null) return; // already running
+
+  botMsgWatchText = lastMsg.text;
+  botMsgWatchStaleTicks = 0;
+  botMsgWatchTotalTicks = 0;
+  const gen = ++botMsgWatchGen;
+
+  const tick = async () => {
+    if (botMsgWatchGen !== gen) return;
+    botMsgWatchTimer = null;
+
+    await refreshMessages();
+
+    if (botMsgWatchGen !== gen) return; // stopped while fetching
+
+    const current = messages.value[messages.value.length - 1];
+    if (!current || current.fromMe || activeChat.value?.type !== 'bot') return;
+
+    botMsgWatchTotalTicks++;
+    if (current.text === botMsgWatchText) {
+      botMsgWatchStaleTicks++;
+    } else {
+      botMsgWatchText = current.text;
+      botMsgWatchStaleTicks = 0;
+    }
+
+    // Stop after 3 unchanged polls or 20 total polls (~40s safety cap)
+    if (botMsgWatchStaleTicks < 3 && botMsgWatchTotalTicks < 20) {
+      botMsgWatchTimer = setTimeout(tick, 2000);
+    }
+  };
+
+  botMsgWatchTimer = setTimeout(tick, 2000);
+}
+
 async function checkMembershipStatus(): Promise<void> {
   if (!selectedAccountId.value || !joinRequestSent.value) return;
   // Use the stored group chatId -- activeChatId may be the verification bot DM, not the group
@@ -1786,10 +1841,10 @@ async function clickInlineButton(
     }, 4000);
   } finally {
     btnLoadingKey.value = null;
-    // Bots typically edit messages rather than send new ones.
-    // Re-fetch twice to pick up edits.
+    // Re-fetch twice to pick up the bot's immediate edits, then start the watcher
+    // for bots that stream/progressively edit their message.
     setTimeout(refreshMessages, 1200);
-    setTimeout(refreshMessages, 3500);
+    setTimeout(() => { refreshMessages(); scheduleBotMsgWatch(); }, 3500);
     // Check membership after bot interaction -- covers both the group view and the bot DM
     if (joinRequestSent.value && pendingJoinChatId.value) {
       setTimeout(checkMembershipStatus, 4000);
@@ -2335,6 +2390,7 @@ async function openChat(dialog: TgDialog, addToHistory = false) {
   joinRequestSent.value = false;
   pendingJoinChatId.value = null;
   stopMembershipPoll();
+  stopBotMsgWatch();
   await fetchMessages();
   markChatRead(dlg.chatId);
   if (dlg.type === "bot") loadBotCommands(dlg.chatId);
@@ -2412,6 +2468,7 @@ async function fetchMessages(fresh = false) {
       firstUnreadId.value = null;
     }
     await scrollToUnread(unreadCount);
+    scheduleBotMsgWatch();
   } catch (e: any) {
     if (ctrl.signal.aborted) return;
     console.error("Failed to load messages:", e);
@@ -2676,6 +2733,8 @@ function onIncomingMessage(chatId: string, msg: TgMessage) {
     }
     // Mark as read on TG server and clear local badge
     markChatRead(chatId);
+    // If a bot sent this message it may keep editing it -- start the watcher
+    if (!msg.fromMe) scheduleBotMsgWatch();
   }
 }
 
