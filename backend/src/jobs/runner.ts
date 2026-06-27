@@ -1,4 +1,4 @@
-import type { Job, TgAccount, EmbywatchConfig, EmbywatchLog, TgProxy, TgAppClient } from '../types';
+import type { Job, TgAccount, EmbywatchConfig, EmbywatchLog, TgProxy, TgAppClient, CheckinConfig } from '../types';
 import { runCheckin, CheckinError, type CheckinAttemptLog } from './checkin';
 import { runEmbywatch } from './embywatch';
 import { runCustom, CustomJobError, type CustomJobLog } from './custom';
@@ -99,10 +99,27 @@ export async function runJob(
           const checkinProxyUrl = resolveProxyUrl(job.config, job.templateId, account.proxyId);
           const checkinProxy = parseTgProxy(checkinProxyUrl);
           const checkinDevice = resolveAppClientParams(account.appClientId);
+          let checkinCfg: CheckinConfig = {};
+          try {
+            // For template-linked jobs, use template config as base then overlay job config
+            if (job.templateId) {
+              const tplRow = db.prepare('SELECT config FROM job_templates WHERE id = ?').get(job.templateId) as { config: string | null } | undefined;
+              if (tplRow?.config) {
+                let t = JSON.parse(tplRow.config);
+                if (typeof t === 'string') t = JSON.parse(t);
+                checkinCfg = { ...checkinCfg, ...t };
+              }
+            }
+            if (job.config) {
+              let c = JSON.parse(job.config);
+              if (typeof c === 'string') c = JSON.parse(c);
+              checkinCfg = { ...checkinCfg, ...c };
+            }
+          } catch { /* ignore */ }
           const log = await runCheckin(
             account.apiId, account.apiHash, account.sessionString,
             job.botUsername, job.replyTimeoutMs, job.startCommand, job.checkinButton, attempt, job.retryMax, signal,
-            checkinProxy, checkinDevice,
+            checkinProxy, checkinDevice, checkinCfg.successContains, checkinCfg.failContains,
           );
           detailLogs?.push(log);
           break;

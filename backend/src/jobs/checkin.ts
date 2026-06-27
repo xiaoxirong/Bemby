@@ -543,6 +543,8 @@ export async function runCheckin(
   signal?: AbortSignal,
   proxy?: TgProxy,
   deviceParams?: TgDeviceParams,
+  successContains?: string,
+  failContains?: string,
 ): Promise<CheckinAttemptLog> {
   const attemptStart = Date.now();
   const log: CheckinAttemptLog = {
@@ -690,6 +692,17 @@ export async function runCheckin(
 
     const notFoundLabel = isAiBtn(checkinButton) ? `{aiBtn} -> "${targetText}"` : `"${checkinButton}"`;
     if (!clicked) throw new Error(`Button ${notFoundLabel} not found in bot reply`);
+
+    // Check success/fail text in callback answer or button response
+    if (successContains || failContains) {
+      const texts = [log.callbackAnswer ?? '', htmlToText(log.buttonResponseHtml ?? '')].filter(Boolean).join('\n');
+      if (failContains && texts.includes(failContains)) {
+        throw new Error(`Reply indicates failure: "${failContains}" detected`);
+      }
+      if (successContains && !texts.includes(successContains)) {
+        throw new Error(`Expected success indicator "${successContains}" not found in response`);
+      }
+    }
 
     log.totalMs = Date.now() - attemptStart;
     return log;

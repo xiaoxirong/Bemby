@@ -294,6 +294,16 @@
                     <label class="form-label">{{ t('jobs.custom.labelMaxWait') }}</label>
                     <input v-model.number="action.maxWaitMs" class="form-input" type="number" min="1000" step="1000" />
                   </div>
+                  <div class="form-group" style="margin-bottom:0">
+                    <label class="form-label">{{ t('jobs.custom.labelSuccessContains') }}</label>
+                    <input v-model.trim="action.successContains" class="form-input" :placeholder="t('jobs.custom.successContainsPlaceholder')" />
+                    <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.custom.successContainsHint') }}</div>
+                  </div>
+                  <div class="form-group" style="margin-bottom:0">
+                    <label class="form-label">{{ t('jobs.custom.labelFailContains') }}</label>
+                    <input v-model.trim="action.failContains" class="form-input" :placeholder="t('jobs.custom.failContainsPlaceholder')" />
+                    <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.custom.failContainsHint') }}</div>
+                  </div>
                 </div>
 
                 <!-- enter_captcha -->
@@ -362,6 +372,16 @@
                 <label class="form-label">{{ t('jobs.labelMaxRetries') }}</label>
                 <input v-model.number="form.retryMax" class="form-input" type="number" min="1" max="10" />
               </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('jobs.labelSuccessContains') }}</label>
+              <input v-model.trim="tplCheckinSuccessContains" class="form-input" :placeholder="t('jobs.successContainsPlaceholder')" />
+              <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.successContainsHint') }}</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('jobs.labelFailContains') }}</label>
+              <input v-model.trim="tplCheckinFailContains" class="form-input" :placeholder="t('jobs.failContainsPlaceholder')" />
+              <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.failContainsHint') }}</div>
             </div>
           </template>
 
@@ -720,6 +740,8 @@ const cmdCustom = ref('');
 const btnDropdown = ref('');
 const btnCustom = ref('');
 const btnAiHint = ref('');
+const tplCheckinSuccessContains = ref('');
+const tplCheckinFailContains = ref('');
 
 function setCmdState(val: string) {
   if (CMD_PRESETS.has(val)) { cmdDropdown.value = val; cmdCustom.value = ''; }
@@ -758,6 +780,8 @@ function onJobTypeChange() {
   customActions.value = [];
   customJobMaxRetries.value = 1;
   btnAiHint.value = '';
+  tplCheckinSuccessContains.value = '';
+  tplCheckinFailContains.value = '';
   setCmdState(''); setBtnState('');
 }
 
@@ -845,15 +869,31 @@ function buildConfig(): EmbywatchConfig | CustomConfig | null {
         if (a.buttonDropdown === 'custom') button = a.buttonCustom;
         else if (a.buttonDropdown === '{aiBtn}') button = a.buttonAiHint.trim() ? `{aiBtn:${a.buttonAiHint.trim()}}` : '{aiBtn}';
         else button = a.buttonDropdown || '签到';
-        return { type: 'click_button' as const, button, maxRetries: a.maxRetries, maxWaitMs: a.maxWaitMs };
+        return {
+          type: 'click_button' as const,
+          button,
+          maxRetries: a.maxRetries,
+          maxWaitMs: a.maxWaitMs,
+          ...(a.successContains.trim() ? { successContains: a.successContains.trim() } : {}),
+          ...(a.failContains.trim() ? { failContains: a.failContains.trim() } : {}),
+        };
       }),
     };
     if (customJobMaxRetries.value > 1) cfg.maxRetries = customJobMaxRetries.value;
     if (tplProxyId.value) cfg.proxyId = tplProxyId.value;
     return cfg;
   }
-  // checkin: only proxy stored in template config
-  if (tplProxyId.value) return { actions: [], proxyId: tplProxyId.value };
+  if (form.jobType === 'checkin') {
+    const s = tplCheckinSuccessContains.value.trim();
+    const f = tplCheckinFailContains.value.trim();
+    const proxy = tplProxyId.value;
+    if (s || f || proxy) return {
+      ...(s ? { successContains: s } : {}),
+      ...(f ? { failContains: f } : {}),
+      ...(proxy ? { proxyId: proxy } : {}),
+    } as unknown as CustomConfig;
+    return null;
+  }
   return null;
 }
 
@@ -885,6 +925,8 @@ function openAdd() {
   tplProxyId.value = '';
   customActions.value = [];
   customJobMaxRetries.value = 1;
+  tplCheckinSuccessContains.value = '';
+  tplCheckinFailContains.value = '';
   setCmdState(''); setBtnState('');
   formError.value = '';
   showForm.value = true;
@@ -964,7 +1006,7 @@ function openEdit(tpl: JobTemplate) {
             } else {
               buttonDropdown = 'custom'; buttonCustom = a.button;
             }
-            return { ...base, type: 'click_button' as const, button: a.button, buttonDropdown, buttonCustom, buttonAiHint, maxRetries: a.maxRetries, maxWaitMs: a.maxWaitMs };
+            return { ...base, type: 'click_button' as const, button: a.button, buttonDropdown, buttonCustom, buttonAiHint, maxRetries: a.maxRetries, maxWaitMs: a.maxWaitMs, successContains: a.successContains ?? '', failContains: a.failContains ?? '' };
           }
           return base;
         });
@@ -978,10 +1020,14 @@ function openEdit(tpl: JobTemplate) {
     Object.assign(embyCfg, { username: '', password: '', playDuration: '', userAgent: '', markWatched: true });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     customActions.value = [];
+    tplCheckinSuccessContains.value = '';
+    tplCheckinFailContains.value = '';
     if (tpl.config) {
       try {
-        const cfg = JSON.parse(tpl.config) as { proxyId?: string };
+        const cfg = JSON.parse(tpl.config) as { proxyId?: string; successContains?: string; failContains?: string };
         tplProxyId.value = cfg.proxyId ?? '';
+        tplCheckinSuccessContains.value = cfg.successContains ?? '';
+        tplCheckinFailContains.value = cfg.failContains ?? '';
       } catch { /* ignore */ }
     }
   }

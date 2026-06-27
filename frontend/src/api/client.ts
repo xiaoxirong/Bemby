@@ -116,6 +116,8 @@ export type CustomAction =
       button: string;
       maxRetries: number;
       maxWaitMs: number;
+      successContains?: string;
+      failContains?: string;
     }
   | {
       type: "enter_captcha";
