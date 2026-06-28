@@ -1237,13 +1237,12 @@ export async function resolveWebApp(
     const bot = (await entry.client.getEntity(botUsername)) as Api.User;
     entry.entityCache.set(entityToChatId(bot), bot);
     const result = (await entry.client.invoke(
-      new Api.messages.RequestWebView({
+      new Api.messages.RequestMainWebView({
         peer: bot,
         bot,
         platform: "web",
         startParam,
-        fromSwitchWebview: true,
-      } as any),
+      }),
     )) as any;
     return result.url as string;
   }

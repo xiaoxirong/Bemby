@@ -1549,10 +1549,9 @@ async function openMiniApp(
       url,
       botChatId,
     );
-    webViewPanel.value = { url: webAppUrl, title };
+    window.open(webAppUrl, "_blank", "noopener");
   } catch {
-    // Fallback: open directly in iframe (without TG auth token)
-    webViewPanel.value = { url, title };
+    window.open(url, "_blank", "noopener");
   }
 }
 
