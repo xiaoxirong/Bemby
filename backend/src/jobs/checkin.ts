@@ -564,10 +564,10 @@ export async function checkSpamStatus(
 
   try {
     // Set up listener BEFORE sending to avoid missing a fast reply
-    const replyPromise = new Promise<string>((resolve, reject) => {
+    const replyPromise = new Promise<{ text: string; id: number }>((resolve, reject) => {
       let done = false;
 
-      const finish = (result: string | Error) => {
+      const finish = (result: { text: string; id: number } | Error) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
@@ -581,14 +581,21 @@ export async function checkSpamStatus(
       const handler = async (event: NewMessageEvent) => {
         const msg = event.message as Api.Message;
         const text = (msg.message ?? "").trim();
-        if (text) finish(text);
+        if (text) finish({ text, id: msg.id });
       };
 
       client.addEventHandler(handler, new NewMessage({ fromUsers: [SPAM_BOT] }));
     });
 
     await client.sendMessage(SPAM_BOT, { message: "/start" });
-    const rawMessage = await replyPromise;
+    const { text: rawMessage, id: replyId } = await replyPromise;
+
+    // Mark SpamBot conversation as read so it doesn't show as unread in the chat list
+    try {
+      const spamBotEntity = await client.getEntity(SPAM_BOT);
+      await client.invoke(new Api.messages.ReadHistory({ peer: spamBotEntity, maxId: replyId }));
+    } catch { /* non-critical, ignore */ }
+
     return { spamStatus: parseSpamStatus(rawMessage), rawMessage };
   } finally {
     try { await client.disconnect(); } catch { /* ignore */ }

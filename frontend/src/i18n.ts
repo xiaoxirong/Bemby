@@ -125,8 +125,8 @@ const zh = {
     importFileLabel: "选择从 Bemby 导出的 JSON 文件",
     importDoing: "导入中...",
     importFailed: "导入失败",
-    checkSpam: "检测消息状态",
-    checkSpamSelected: "批量检测消息状态",
+    checkSpam: "检测发消息许可",
+    checkSpamSelected: "批量检发测消息许可",
     spamChecking: "检测中...",
 
     spam: {
