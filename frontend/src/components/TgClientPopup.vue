@@ -979,6 +979,7 @@ import {
   type TgProfile,
   type TgInvitePreview,
 } from "../api/client";
+import { avatarCache, avatarQueue, avatarQueued, avatarFetching, avatarConcurrencyState, persistAvatarCache } from "../composables/avatarCache";
 
 const { inline = false } = defineProps<{ inline?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
@@ -1024,14 +1025,7 @@ const loadingDialogs = ref(false);
 const dialogError = ref("");
 const reconnecting = ref(false);
 
-// Avatar cache keyed by chatId only -- shared across all accounts.
-// '' = fetched but no avatar exists. Undefined = not yet fetched.
-const avatarCache = reactive(new Map<string, string>());
-const avatarQueue: string[] = [];
-const avatarQueued = new Set<string>(); // O(1) membership check for the queue
-const avatarFetching = new Set<string>(); // currently in-flight
 const AVATAR_CONCURRENCY = 3;
-let avatarActive = 0;
 
 const searchQuery = ref("");
 const searchResults = ref<TgDialog[] | null>(null);
@@ -1328,21 +1322,21 @@ function avatarSrc(chatId: string): string {
 }
 
 function drainAvatarQueue(): void {
-  while (avatarActive < AVATAR_CONCURRENCY && avatarQueue.length > 0) {
+  while (avatarConcurrencyState.active < AVATAR_CONCURRENCY && avatarQueue.length > 0) {
     const chatId = avatarQueue.shift()!;
     avatarQueued.delete(chatId);
     // Skip if cached while waiting in queue
     if (avatarCache.has(chatId) || avatarFetching.has(chatId)) continue;
     if (!selectedAccountId.value) { avatarQueue.unshift(chatId); avatarQueued.add(chatId); break; }
-    avatarActive++;
+    avatarConcurrencyState.active++;
     avatarFetching.add(chatId);
     const accountId = selectedAccountId.value;
     tgClientApi.avatarsBatch(accountId, [chatId])
-      .then((result) => { avatarCache.set(chatId, result[chatId] ?? ""); })
+      .then((result) => { avatarCache.set(chatId, result[chatId] ?? ""); persistAvatarCache(); })
       .catch(() => { avatarCache.set(chatId, ""); })
       .finally(() => {
         avatarFetching.delete(chatId);
-        avatarActive--;
+        avatarConcurrencyState.active--;
         drainAvatarQueue();
       });
   }
