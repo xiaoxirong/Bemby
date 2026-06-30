@@ -78,11 +78,11 @@ describe("pickNextRun", () => {
     expect(result.toFormat("yyyy-MM-dd")).toBe("2024-01-16");
   });
 
-  // --- forceTomorrow flag ---
+  // --- daysAhead flag ---
 
-  it("picks tomorrow even when before the window if forceTomorrow is true", () => {
+  it("picks tomorrow even when before the window if daysAhead is 1", () => {
     setNow("08:00:00"); // before window — would normally pick today
-    const result = pickNextRun(1000, 1200, TZ, true);
+    const result = pickNextRun(1000, 1200, TZ, 1);
     const min = result.hour * 60 + result.minute;
 
     expect(result.toFormat("yyyy-MM-dd")).toBe("2024-01-16");
@@ -90,9 +90,9 @@ describe("pickNextRun", () => {
     expect(min).toBeLessThan(12 * 60);
   });
 
-  it("picks tomorrow even when inside the window if forceTomorrow is true", () => {
+  it("picks tomorrow even when inside the window if daysAhead is 1", () => {
     setNow("10:30:00"); // inside window
-    const result = pickNextRun(1000, 1200, TZ, true);
+    const result = pickNextRun(1000, 1200, TZ, 1);
 
     expect(result.toFormat("yyyy-MM-dd")).toBe("2024-01-16");
   });

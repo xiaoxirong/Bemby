@@ -3,6 +3,18 @@
     <div class="page-header">
       <h2 class="page-title">{{ t("accounts.title") }}</h2>
       <div class="page-header-actions">
+        <button v-if="accounts.length" class="btn btn-secondary" @click="toggleSelectAll">
+          {{ allSelected ? t("common.deselectAll") : t("common.selectAll") }}
+        </button>
+        <button
+          v-if="selectedIds.size > 0"
+          class="btn btn-secondary"
+          :disabled="spamBulkRunning"
+          @click="checkSpamBulk"
+        >
+          <i class="fa-solid fa-user-shield"></i>
+          {{ t("accounts.checkSpamSelected") }} ({{ selectedIds.size }})
+        </button>
         <button
           v-if="selectedIds.size > 0"
           class="btn btn-secondary"
@@ -29,14 +41,6 @@
           <thead>
             <tr>
               <th style="width: 20px"></th>
-              <th style="width: 36px">
-                <input
-                  type="checkbox"
-                  :checked="allSelected"
-                  :indeterminate="someSelected"
-                  @change="toggleSelectAll"
-                />
-              </th>
               <th>{{ t("common.name") }}</th>
               <th>{{ t("accounts.colPhone") }}</th>
               <th class="col-hide-mobile">{{ t("accounts.colTgName") }}</th>
@@ -47,7 +51,7 @@
           </thead>
           <tbody>
             <tr v-if="!accounts.length">
-              <td colspan="8" class="empty">{{ t("accounts.noAccounts") }}</td>
+              <td colspan="7" class="empty">{{ t("accounts.noAccounts") }}</td>
             </tr>
             <tr
               v-for="(a, idx) in accounts"
@@ -55,8 +59,11 @@
               :class="[
                 a.disabled ? 'row-disabled' : '',
                 dragOverIdx === idx ? 'drag-over' : '',
+                selectedIds.has(a.id) ? 'row-selected' : '',
               ]"
+              style="cursor:pointer"
               draggable="true"
+              @click="toggleSelect(a.id)"
               @dragstart="onDragStart(idx, $event)"
               @dragover.prevent="dragOverIdx = idx"
               @dragleave="dragOverIdx = null"
@@ -65,13 +72,6 @@
             >
               <td class="drag-handle" title="Drag to reorder">
                 <i class="fa-solid fa-grip-vertical"></i>
-              </td>
-              <td>
-                <input
-                  type="checkbox"
-                  :checked="selectedIds.has(a.id)"
-                  @change="toggleSelect(a.id)"
-                />
               </td>
               <td>
                 {{ a.name }}
@@ -104,28 +104,45 @@
                 >
               </td>
               <td>{{ a.phoneNumber }}</td>
-              <td class="tg-name-cell col-hide-mobile">
-                <span v-if="metaLoading.has(a.id)" class="tg-name-loading">
-                  <span class="spinner-xs"></span>
-                </span>
-                <template v-else-if="a.tgDisplayName">
-                  <span class="tg-name-text">{{ a.tgDisplayName }}</span>
-                  <span v-if="a.tgUsername" class="tg-name-username">@{{ a.tgUsername }}</span>
-                </template>
-                <button
-                  v-if="a.authStatus === 'authenticated'"
-                  class="btn btn-xs btn-ghost btn-icon tg-name-refresh"
-                  :disabled="metaLoading.has(a.id)"
-                  title="Refresh TG name"
-                  @click="fetchMeta(a.id)"
-                >
-                  <i class="fa-solid fa-arrows-rotate"></i>
-                </button>
+              <td class="col-hide-mobile">
+                <div class="tg-name-cell">
+                  <span v-if="metaLoading.has(a.id)" class="tg-name-loading">
+                    <span class="spinner-xs"></span>
+                  </span>
+                  <template v-else-if="a.tgDisplayName">
+                    <span class="tg-name-text">{{ a.tgDisplayName }}</span>
+                    <span v-if="a.tgUsername" class="tg-name-username">@{{ a.tgUsername }}</span>
+                  </template>
+                  <button
+                    v-if="a.authStatus === 'authenticated'"
+                    class="btn btn-xs btn-ghost btn-icon tg-name-refresh"
+                    :disabled="metaLoading.has(a.id)"
+                    title="Refresh TG name"
+                    @click.stop="fetchMeta(a.id)"
+                  >
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                  </button>
+                </div>
               </td>
               <td>
                 <span :class="statusBadge(a.authStatus)">{{
                   t(`accounts.status.${a.authStatus}`)
                 }}</span>
+                <span
+                  v-if="spamCheckLoading.has(a.id)"
+                  class="badge badge-grey"
+                  style="margin-left: 6px"
+                >
+                  <i class="fa-solid fa-spinner fa-spin" style="margin-right: 3px"></i>{{ t("accounts.spamChecking") }}
+                </span>
+                <span
+                  v-else-if="spamStatuses.get(a.id)"
+                  :class="spamBadgeClass(spamStatuses.get(a.id)!.spamStatus)"
+                  :title="spamStatuses.get(a.id)!.rawMessage"
+                  style="margin-left: 6px; cursor: help"
+                >
+                  <i class="fa-solid fa-shield-halved" style="margin-right: 3px"></i>{{ t(`accounts.spam.${spamStatuses.get(a.id)!.spamStatus}`) }}
+                </span>
               </td>
               <td class="col-hide-mobile">{{ fmtDate(a.createdAt) }}</td>
               <td @click.stop>
@@ -587,6 +604,7 @@ import {
   type Proxy,
   type TgAppClient,
   type TgAccountStatus,
+  type TgSpamStatus,
   type AccountExportItem,
 } from "../api/client";
 import { t, locale } from "../i18n";
@@ -676,6 +694,53 @@ async function fetchMeta(accountId: number) {
 
 // ── Mobile action sheet ───────────────────────────────────────────────────────
 const actionMenuAccount = ref<Account | null>(null);
+
+// ── Spam check state ──────────────────────────────────────────────────────────
+const spamCheckLoading = reactive(new Set<number>());
+const spamStatuses = reactive(new Map<number, TgSpamStatus>());
+
+function spamBadgeClass(status: TgSpamStatus["spamStatus"]) {
+  const map: Record<string, string> = {
+    free: "badge-green",
+    limited: "badge-orange",
+    blocked: "badge-red",
+    frozen: "badge-blue",
+    unknown: "badge-grey",
+  };
+  return `badge ${map[status] ?? "badge-grey"}`;
+}
+
+async function checkSpam(a: Account) {
+  if (spamCheckLoading.has(a.id)) return;
+  spamCheckLoading.add(a.id);
+  try {
+    const result = await accountsApi.checkSpam(a.id);
+    spamStatuses.set(a.id, result);
+  } catch (err: any) {
+    spamStatuses.set(a.id, {
+      spamStatus: "unknown",
+      rawMessage: err.response?.data?.error ?? "Check failed",
+    });
+  } finally {
+    spamCheckLoading.delete(a.id);
+  }
+}
+
+const spamBulkRunning = ref(false);
+
+async function checkSpamBulk() {
+  if (spamBulkRunning.value) return;
+  const targets = accounts.value.filter(
+    (a) => selectedIds.value.has(a.id) && a.authStatus === "authenticated" && !a.disabled,
+  );
+  if (!targets.length) return;
+  spamBulkRunning.value = true;
+  // Run sequentially to avoid Telegram flood limits
+  for (const a of targets) {
+    await checkSpam(a);
+  }
+  spamBulkRunning.value = false;
+}
 
 // ── Status check state ────────────────────────────────────────────────────────
 const showStatus = ref(false);
@@ -960,6 +1025,9 @@ async function openCheckStatus(a: Account) {
   } finally {
     statusChecking.value = false;
   }
+  // Run spam check after checkStatus disconnects to avoid AUTH_KEY_DUPLICATED
+  // (both calls create separate TelegramClient instances from the same session)
+  if (!a.disabled) checkSpam(a);
 }
 
 // ── Auth flow ─────────────────────────────────────────────────────────────────
@@ -1133,6 +1201,14 @@ tr:hover .tg-name-refresh {
 
 .row-disabled td {
   opacity: 0.5;
+}
+
+tbody tr:nth-child(even):not(.row-selected) td {
+  background: #f0f2f5;
+}
+
+.row-selected td {
+  background: #bfdbfe;
 }
 
 .status-row {

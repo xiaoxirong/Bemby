@@ -49,6 +49,128 @@ function tgError(err: any, accountId: number, res: Response): void {
 
 const router = Router();
 
+// GET /miniapp-proxy -- proxy mini app content through the backend.
+// For HTML: rewrites <script src> and <link href> (stylesheet/modulepreload) so all
+// JS/CSS also flows through this proxy, bypassing CORS and X-Frame-Options on the bot server.
+// The fragment (#tgWebAppData=...) stays in the iframe src so window.location.hash works normally.
+router.get("/miniapp-proxy", async (req, res) => {
+  const url = req.query.url as string;
+  const token = (req.query.token as string) ?? "";
+  if (!url || !/^https?:\/\//i.test(url)) {
+    res.status(400).json({ error: "valid url required" });
+    return;
+  }
+  try {
+    const upstream = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Linux; Android 11; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36 Telegram/10.0",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      redirect: "follow",
+    });
+
+    const contentType = upstream.headers.get("content-type") ?? "text/html";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.removeHeader("X-Frame-Options");
+    res.removeHeader("Content-Security-Policy");
+
+    if (contentType.includes("text/html")) {
+      let html = await upstream.text();
+      const finalUrl = (upstream.url || url).split("#")[0];
+      const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
+
+      // Strip any <base href> the bot's own HTML injects -- it would redirect our
+      // relative proxy URLs to the bot server instead of our backend
+      html = html.replace(/<base\b[^>]*>/gi, "");
+
+      const toProxyUrl = (resourceUrl: string): string => {
+        if (!resourceUrl || resourceUrl.startsWith("data:") || resourceUrl.includes("/miniapp-proxy")) {
+          return resourceUrl;
+        }
+        const abs = /^https?:\/\//i.test(resourceUrl)
+          ? resourceUrl
+          : new URL(resourceUrl, finalUrl).toString();
+        // Relative path -- without <base href> this resolves against our backend origin correctly
+        return `/api/tg-client/miniapp-proxy?url=${encodeURIComponent(abs)}${tokenParam}`;
+      };
+
+      const toAbsUrl = (resourceUrl: string): string => {
+        if (!resourceUrl || resourceUrl.startsWith("data:") || /^https?:\/\//i.test(resourceUrl)) {
+          return resourceUrl;
+        }
+        try { return new URL(resourceUrl, finalUrl).toString(); } catch { return resourceUrl; }
+      };
+
+      // Rewrite <script src="..."> through proxy -- strip crossorigin (same-origin after rewrite)
+      html = html.replace(
+        /(<script\b)([^>]*?)\s(src\s*=\s*)(["'])([^"']+)\4/gi,
+        (m, tag, attrs, srcAttr, q, src) => {
+          const cleanAttrs = attrs.replace(/\bcrossorigin\b(?:\s*=\s*["'][^"']*["'])?/gi, "").trimEnd();
+          return `${tag}${cleanAttrs} ${srcAttr}${q}${toProxyUrl(src)}${q}`;
+        },
+      );
+
+      // Rewrite <link href="..."> for stylesheets, modulepreload, and script preloads through proxy
+      html = html.replace(/<link\b[^>]+>/gi, (linkTag) => {
+        const isScriptResource =
+          /rel\s*=\s*["']?(stylesheet|modulepreload)["']?/i.test(linkTag) ||
+          (/rel\s*=\s*["']?preload["']?/i.test(linkTag) && /\bas\s*=\s*["']?script["']?/i.test(linkTag));
+        if (!isScriptResource) {
+          // For icon, dns-prefetch, etc. just make relative URLs absolute
+          return linkTag.replace(/(href\s*=\s*)(["'])([^"']+)\2/i, (_m, attr, q, href) => `${attr}${q}${toAbsUrl(href)}${q}`);
+        }
+        return linkTag
+          .replace(/\bcrossorigin\b(?:\s*=\s*["'][^"']*["'])?/gi, "")
+          .replace(/(href\s*=\s*)(["'])([^"']+)\2/i, (_m, attr, q, href) => `${attr}${q}${toProxyUrl(href)}${q}`);
+      });
+
+      // Make all remaining relative src= absolute so images/fonts load from the bot server
+      // without needing a <base href> (which would break our relative proxy URLs above)
+      html = html.replace(
+        /(\bsrc\s*=\s*)(["'])(?!data:|https?:\/\/|\/\/|\/api\/)([^"']+)\2/gi,
+        (_m, attr, q, src) => `${attr}${q}${toAbsUrl(src)}${q}`,
+      );
+
+      // Inject an ES module importmap so Vite dynamic chunk imports (e.g. import('/chunk.js'))
+      // are redirected through our proxy instead of hitting our backend root unauthenticated.
+      // Scope is limited to modules loaded from our proxy URL so it doesn't affect other imports.
+      const botOrigin = new URL(finalUrl).origin;
+      const encodedBase = encodeURIComponent(`${botOrigin}/`);
+      const proxyBase = token
+        ? `/api/tg-client/miniapp-proxy?token=${encodeURIComponent(token)}&url=${encodedBase}`
+        : `/api/tg-client/miniapp-proxy?url=${encodedBase}`;
+      const importMap = JSON.stringify({
+        scopes: {
+          "/api/tg-client/miniapp-proxy": {
+            "/": proxyBase,
+            [`${botOrigin}/`]: proxyBase,
+          },
+        },
+      });
+      const importMapTag = `<script type="importmap">${importMap}</script>`;
+      // Must appear before any <script type="module">
+      if (/<script\b[^>]*type\s*=\s*["']module["']/i.test(html)) {
+        html = html.replace(
+          /<script\b[^>]*type\s*=\s*["']module["']/i,
+          `${importMapTag}\n$&`,
+        );
+      } else {
+        html = html.replace(/<head[^>]*>/i, (m) => `${m}\n${importMapTag}`);
+      }
+
+      res.send(html);
+    } else {
+      const buf = await upstream.arrayBuffer();
+      res.send(Buffer.from(buf));
+    }
+  } catch (err: any) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // GET /:accountId/folders
 router.get("/:accountId/folders", async (req, res) => {
   const accountId = Number(req.params.accountId);

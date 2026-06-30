@@ -34,12 +34,15 @@
           <option value="">{{ t('jobs.allBotUrlTpl') }}</option>
           <option v-for="opt in botUrlTplOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
         </select>
+        <button v-if="sortedJobs.length" class="btn btn-sm btn-secondary" style="margin-left:auto" @click="toggleAllJobs">
+          {{ allJobsSelected ? t('common.deselectAll') : t('common.selectAll') }}
+        </button>
       </div>
       <!-- Bulk action bar -->
       <div v-if="selectedJobIds.length" class="bulk-bar">
         <span class="bulk-count">{{ t('jobs.selectedCount').replace('{n}', String(selectedJobIds.length)) }}</span>
-        <button class="btn btn-sm btn-ghost" @click="bulkEnableJobs"><i class="fa-solid fa-circle-check"></i> {{ t('jobs.bulkEnable').replace('{n}', String(selectedJobIds.length)) }}</button>
-        <button class="btn btn-sm btn-ghost" @click="confirmBulkDisableJobs = true"><i class="fa-solid fa-ban"></i> {{ t('jobs.bulkDisable').replace('{n}', String(selectedJobIds.length)) }}</button>
+        <button class="btn btn-sm btn-secondary" @click="bulkEnableJobs"><i class="fa-solid fa-circle-check"></i> {{ t('jobs.bulkEnable').replace('{n}', String(selectedJobIds.length)) }}</button>
+        <button class="btn btn-sm btn-secondary" @click="confirmBulkDisableJobs = true"><i class="fa-solid fa-ban"></i> {{ t('jobs.bulkDisable').replace('{n}', String(selectedJobIds.length)) }}</button>
         <button class="btn btn-sm btn-danger" @click="confirmBulkDeleteJobs = true"><i class="fa-solid fa-trash"></i> {{ t('jobs.bulkDelete').replace('{n}', String(selectedJobIds.length)) }}</button>
         <button class="btn btn-sm btn-ghost" style="margin-left:auto" @click="selectedJobIds = []"><i class="fa-solid fa-xmark"></i></button>
       </div>
@@ -47,7 +50,6 @@
         <table>
           <thead>
             <tr>
-              <th style="width:36px"><input type="checkbox" :checked="allJobsSelected" :indeterminate="selectedJobIds.length > 0 && !allJobsSelected" @change="toggleAllJobs" /></th>
               <th class="th-sort" :class="sortKey === 'name' ? 'sort-active' : ''" @click="setSort('name')">{{ t('common.name') }} <span class="sort-icon">{{ sortIcon('name') }}</span></th>
               <th class="th-sort" :class="sortKey === 'account' ? 'sort-active' : ''" @click="setSort('account')">{{ t('jobs.colAccount') }} <span class="sort-icon">{{ sortIcon('account') }}</span></th>
               <th class="th-sort" :class="sortKey === 'type' ? 'sort-active' : ''" @click="setSort('type')">{{ t('jobs.colType') }} <span class="sort-icon">{{ sortIcon('type') }}</span></th>
@@ -59,15 +61,14 @@
           </thead>
           <tbody>
             <tr v-if="!sortedJobs.length">
-              <td colspan="8" class="empty">{{ t('jobs.noJobs') }}</td>
+              <td colspan="7" class="empty">{{ t('jobs.noJobs') }}</td>
             </tr>
             <tr
               v-for="j in sortedJobs" :key="j.id"
               style="cursor:pointer"
-              :class="selectedJobId === j.id ? 'row-selected' : ''"
-              @click="selectedJobId = selectedJobId === j.id ? null : j.id"
+              :class="selectedJobIds.includes(j.id) ? 'row-selected' : ''"
+              @click="toggleJobSelect(j.id)"
             >
-              <td @click.stop><input type="checkbox" :checked="selectedJobIds.includes(j.id)" @change="toggleJobSelect(j.id)" /></td>
               <td>{{ j.name }}</td>
               <td>{{ j.accountName ?? j.accountId }}</td>
               <td><span :class="jobTypeBadge(j.jobType)">{{ t(`logs.jobType.${j.jobType}`) }}</span></td>
@@ -393,6 +394,16 @@
                   <label class="form-label">{{ t('jobs.custom.labelMaxWait') }}</label>
                   <input v-model.number="action.maxWaitMs" class="form-input" type="number" min="1000" step="1000" />
                 </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label">{{ t('jobs.custom.labelSuccessContains') }}</label>
+                  <input v-model.trim="action.successContains" class="form-input" :placeholder="t('jobs.custom.successContainsPlaceholder')" />
+                  <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.custom.successContainsHint') }}</div>
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label">{{ t('jobs.custom.labelFailContains') }}</label>
+                  <input v-model.trim="action.failContains" class="form-input" :placeholder="t('jobs.custom.failContainsPlaceholder')" />
+                  <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.custom.failContainsHint') }}</div>
+                </div>
               </div>
 
               <!-- enter_captcha -->
@@ -474,9 +485,23 @@
               <input v-model.number="form.retryMax" class="form-input" type="number" min="1" max="10" :disabled="!!form.templateId" />
             </div>
           </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('jobs.labelSuccessContains') }}</label>
+            <input v-model.trim="checkinSuccessContains" class="form-input" :placeholder="t('jobs.successContainsPlaceholder')" />
+            <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.successContainsHint') }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('jobs.labelFailContains') }}</label>
+            <input v-model.trim="checkinFailContains" class="form-input" :placeholder="t('jobs.failContainsPlaceholder')" />
+            <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.failContainsHint') }}</div>
+          </div>
         </template>
 
         <div v-if="form.jobType === 'embywatch' && !form.templateId" class="form-row">
+          <div class="form-group">
+            <label class="form-label">{{ t('jobs.labelRunEveryDays') }}</label>
+            <input v-model.number="form.runEveryDays" class="form-input" type="number" min="1" max="365" style="max-width:120px" />
+          </div>
           <div class="form-group">
             <label class="form-label">{{ t('jobs.labelMaxRetries') }}</label>
             <input v-model.number="form.retryMax" class="form-input" type="number" min="1" max="10" />
@@ -641,7 +666,6 @@ const botUrlTplOptions = computed(() => {
 
 const sortKey = usePersistedRef<string>('bemby:jobs:sortKey', '');
 const sortDir = usePersistedRef<'asc' | 'desc'>('bemby:jobs:sortDir', 'asc');
-const selectedJobId = ref<number | null>(null);
 const actionMenuJob = ref<Job | null>(null);
 const confirmDisableJob = ref<Job | null>(null);
 const selectedJobIds = ref<number[]>([]);
@@ -721,6 +745,7 @@ const form = reactive({
   retryMax: 5,
   enabled: true,
   templateId: null as number | null,
+  runEveryDays: 1,
 });
 
 const linkedTemplate = computed(() => templates.value.find(t => t.id === form.templateId) ?? null);
@@ -755,6 +780,8 @@ const cmdCustom = ref('')
 const btnDropdown = ref('')
 const btnCustom = ref('')
 const btnAiHint = ref('')
+const checkinSuccessContains = ref('')
+const checkinFailContains = ref('')
 
 function setCmdState(val: string) {
   if (CMD_PRESETS.has(val)) { cmdDropdown.value = val; cmdCustom.value = ''; }
@@ -791,9 +818,12 @@ function onJobTypeChange() {
   form.accountId = (form.jobType === 'checkin' || form.jobType === 'custom')
     ? (accounts.value[0]?.id ?? null)
     : null;
+  form.runEveryDays = 1;
   customActions.value = [];
   customJobMaxRetries.value = 1;
   btnAiHint.value = '';
+  checkinSuccessContains.value = '';
+  checkinFailContains.value = '';
   setCmdState(''); setBtnState('');
 }
 
@@ -876,7 +906,7 @@ function applyTemplate(tpl: JobTemplate) {
             if (aiMatch) { buttonDropdown = '{aiBtn}'; buttonAiHint = aiMatch[1]?.trim() ?? ''; }
             else if (ACTION_BTN_PRESETS.has(a.button)) { buttonDropdown = a.button; }
             else { buttonDropdown = 'custom'; buttonCustom = a.button; }
-            return { ...base, type: 'click_button' as const, button: a.button, buttonDropdown, buttonCustom, buttonAiHint, maxRetries: a.maxRetries, maxWaitMs: a.maxWaitMs };
+            return { ...base, type: 'click_button' as const, button: a.button, buttonDropdown, buttonCustom, buttonAiHint, maxRetries: a.maxRetries, maxWaitMs: a.maxWaitMs, successContains: a.successContains ?? '', failContains: a.failContains ?? '' };
           }
           return base;
         });
@@ -929,11 +959,14 @@ function openAdd() {
     retryMax: Number(settings.value?.default_max_retry ?? 5),
     enabled: true,
     templateId: null,
+    runEveryDays: 1,
   });
   Object.assign(embyCfg, { username: '', password: '', playDuration: '', userAgent: '', markWatched: true });
   Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
   embyUaDropdown.value = '';
   customActions.value = [];
+  checkinSuccessContains.value = '';
+  checkinFailContains.value = '';
   setCmdState(''); setBtnState('');
   formError.value = '';
   showForm.value = true;
@@ -947,9 +980,20 @@ function openEdit(j: Job) {
     scheduleWindowEnd: j.scheduleWindowEnd, timezone: j.timezone,
     replyTimeoutMs: j.replyTimeoutMs, retryMax: j.retryMax, enabled: j.enabled,
     templateId: j.templateId ?? null,
+    runEveryDays: j.runEveryDays ?? 1,
   });
   setCmdState(j.startCommand === '/start' ? '' : (j.startCommand ?? ''));
   setBtnState(j.checkinButton === '签到' ? '' : (j.checkinButton ?? ''));
+  checkinSuccessContains.value = '';
+  checkinFailContains.value = '';
+  if (j.jobType === 'checkin' && j.config) {
+    try {
+      let cfg = JSON.parse(j.config);
+      if (typeof cfg === 'string') cfg = JSON.parse(cfg);
+      checkinSuccessContains.value = cfg.successContains ?? '';
+      checkinFailContains.value = cfg.failContains ?? '';
+    } catch { /* ignore */ }
+  }
   if (j.jobType === 'embywatch') {
     // Parse stored URL back into protocol / host / port fields
     const m = j.botUsername.match(/^(https?):\/\/([^:/]+)(?::(\d+))?/);
@@ -1009,7 +1053,7 @@ function openEdit(j: Job) {
             } else {
               buttonDropdown = 'custom'; buttonCustom = a.button;
             }
-            return { ...base, type: 'click_button', button: a.button, buttonDropdown, buttonCustom, buttonAiHint, maxRetries: a.maxRetries, maxWaitMs: a.maxWaitMs };
+            return { ...base, type: 'click_button', button: a.button, buttonDropdown, buttonCustom, buttonAiHint, maxRetries: a.maxRetries, maxWaitMs: a.maxWaitMs, successContains: a.successContains ?? '', failContains: a.failContains ?? '' };
           }
           return base;
         });
@@ -1048,7 +1092,7 @@ function handleEmbyHostPaste(event: ClipboardEvent) {
   if (portStr) embyServer.port = Number(portStr);
 }
 
-function buildConfig(): EmbywatchConfig | CustomConfig | null {
+function buildConfig(): EmbywatchConfig | CustomConfig | Record<string, string> | null {
   if (form.jobType === 'embywatch') {
     if (form.templateId) {
       // Template provides all settings; job only stores credentials
@@ -1090,11 +1134,23 @@ function buildConfig(): EmbywatchConfig | CustomConfig | null {
         if (a.buttonDropdown === 'custom') button = a.buttonCustom;
         else if (a.buttonDropdown === '{aiBtn}') button = a.buttonAiHint.trim() ? `{aiBtn:${a.buttonAiHint.trim()}}` : '{aiBtn}';
         else button = a.buttonDropdown || '签到';
-        return { type: 'click_button' as const, button, maxRetries: a.maxRetries, maxWaitMs: a.maxWaitMs };
+        return {
+          type: 'click_button' as const,
+          button,
+          maxRetries: a.maxRetries,
+          maxWaitMs: a.maxWaitMs,
+          ...(a.successContains.trim() ? { successContains: a.successContains.trim() } : {}),
+          ...(a.failContains.trim() ? { failContains: a.failContains.trim() } : {}),
+        };
       }),
     };
     if (customJobMaxRetries.value > 1) cfg.maxRetries = customJobMaxRetries.value;
     return cfg;
+  }
+  if (form.jobType === 'checkin') {
+    const s = checkinSuccessContains.value.trim();
+    const f = checkinFailContains.value.trim();
+    if (s || f) return { ...(s ? { successContains: s } : {}), ...(f ? { failContains: f } : {}) };
   }
   return null;
 }
@@ -1333,8 +1389,12 @@ onUnmounted(() => {
   color: #6366f1;
 }
 
+tbody tr:nth-child(even):not(.row-selected) td {
+  background: #f0f2f5;
+}
+
 .row-selected td {
-  background: #eff6ff;
+  background: #bfdbfe;
 }
 
 .badge-tpl {

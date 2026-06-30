@@ -601,6 +601,17 @@ export async function runCustom(
                           : undefined;
                       }
 
+                      // Check success/fail text in callback answer or response message
+                      if (action.successContains || action.failContains) {
+                        const texts = [answer.message ?? '', responseMsg?.message ?? ''].filter(Boolean).join('\n');
+                        if (action.failContains && texts.includes(action.failContains)) {
+                          throw new Error(`Reply indicates failure: "${action.failContains}" detected`);
+                        }
+                        if (action.successContains && !texts.includes(action.successContains)) {
+                          throw new Error(`Expected success indicator "${action.successContains}" not found in response`);
+                        }
+                      }
+
                       step.clickedButton = btnText;
                       step.result = `Clicked "${btnText}"`;
                       break;

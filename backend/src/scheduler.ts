@@ -28,18 +28,17 @@ function checkDailyRunEnabled(): boolean {
   return row?.value !== "false";
 }
 
-function hasRunToday(jobId: number, tz: string): boolean {
-  const today = DateTime.now().setZone(tz).toISODate();
-  const rows = db
+export function daysUntilNextRun(jobId: number, tz: string, runEveryDays: number): number {
+  const row = db
     .prepare(
-      "SELECT ran_at FROM job_logs WHERE job_id = ? AND status = 'success' ORDER BY ran_at DESC LIMIT 5",
+      "SELECT ran_at FROM job_logs WHERE job_id = ? AND status = 'success' ORDER BY ran_at DESC LIMIT 1",
     )
-    .all(jobId) as Array<{ ran_at: string }>;
-
-  return rows.some((row) => {
-    const dt = DateTime.fromISO(row.ran_at, { zone: "utc" }).setZone(tz);
-    return dt.toISODate() === today;
-  });
+    .get(jobId) as { ran_at: string } | undefined;
+  if (!row) return 0;
+  const lastRun = DateTime.fromISO(row.ran_at, { zone: "utc" }).setZone(tz).startOf("day");
+  const today = DateTime.now().setZone(tz).startOf("day");
+  const daysSince = Math.floor(today.diff(lastRun, "days").days);
+  return daysSince >= runEveryDays ? 0 : runEveryDays - daysSince;
 }
 
 export function loadEligibleJobs(): Array<{ job: Job; account: TgAccount | null }> {
@@ -79,6 +78,7 @@ export function loadEligibleJobs(): Array<{ job: Job; account: TgAccount | null 
       config: row.config ?? null,
       startCommand: row.start_command || "/start",
       checkinButton: row.checkin_button || "签到",
+      runEveryDays: row.run_every_days ?? 1,
     } as Job,
     account:
       row.account_id != null
@@ -120,6 +120,7 @@ export async function executeJob(job: Job, account: TgAccount | null): Promise<v
       startCommand: freshJob.start_command || "/start",
       checkinButton: freshJob.checkin_button || "签到",
       templateId: freshJob.template_id ?? null,
+      runEveryDays: freshJob.run_every_days ?? 1,
     };
   }
 
@@ -180,14 +181,14 @@ export async function executeJob(job: Job, account: TgAccount | null): Promise<v
   } finally {
     unregisterJob(Number(logId));
     clearLiveDetail(Number(logId));
-    scheduleOne(job, account, true);
+    scheduleOne(job, account, job.runEveryDays ?? 1);
   }
 }
 
 function scheduleOne(
   job: Job,
   account: TgAccount | null,
-  forceTomorrow = false,
+  daysAhead = 0,
 ): void {
   const existing = schedule.get(job.id);
   if (existing) clearTimeout(existing.timer);
@@ -196,7 +197,7 @@ function scheduleOne(
     job.scheduleWindowStart,
     job.scheduleWindowEnd,
     job.timezone,
-    forceTomorrow,
+    daysAhead,
   );
   const delayMs = Math.max(0, nextRun.toMillis() - Date.now());
 
@@ -227,19 +228,19 @@ function refreshJobs(): void {
   for (const { job, account } of eligible) {
     const existing = schedule.get(job.id);
     if (!existing) {
-      const alreadyRanToday = dailyCheckOn && hasRunToday(job.id, job.timezone);
-      scheduleOne(job, account, alreadyRanToday);
+      const daysAhead = dailyCheckOn ? daysUntilNextRun(job.id, job.timezone, job.runEveryDays ?? 1) : 0;
+      scheduleOne(job, account, daysAhead);
     } else {
       const scheduleChanged =
         existing.job.scheduleWindowStart !== job.scheduleWindowStart ||
         existing.job.scheduleWindowEnd !== job.scheduleWindowEnd ||
         existing.job.timezone !== job.timezone ||
         existing.job.botUsername !== job.botUsername ||
-        existing.job.accountId !== job.accountId;
+        existing.job.accountId !== job.accountId ||
+        existing.job.runEveryDays !== job.runEveryDays;
       if (scheduleChanged) {
-        const alreadyRanToday =
-          dailyCheckOn && hasRunToday(job.id, job.timezone);
-        scheduleOne(job, account, alreadyRanToday);
+        const daysAhead = dailyCheckOn ? daysUntilNextRun(job.id, job.timezone, job.runEveryDays ?? 1) : 0;
+        scheduleOne(job, account, daysAhead);
       } else {
         // Keep the timer but update the stored snapshot so status reflects current settings
         schedule.set(job.id, { ...existing, job, account });

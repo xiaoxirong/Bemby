@@ -55,7 +55,8 @@ const SCHEMA = `
     config           TEXT,
     start_command    TEXT    NOT NULL DEFAULT '/start',
     checkin_button   TEXT    NOT NULL DEFAULT '签到',
-    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    run_every_days   INTEGER NOT NULL DEFAULT 1
   );
 
   CREATE TABLE IF NOT EXISTS jobs (
@@ -74,7 +75,8 @@ const SCHEMA = `
     config                TEXT,
     start_command         TEXT    NOT NULL DEFAULT '/start',
     checkin_button        TEXT    NOT NULL DEFAULT '签到',
-    template_id           INTEGER REFERENCES job_templates(id) ON DELETE SET NULL
+    template_id           INTEGER REFERENCES job_templates(id) ON DELETE SET NULL,
+    run_every_days        INTEGER NOT NULL DEFAULT 1
   );
 `;
 
@@ -93,6 +95,7 @@ type TemplateRow = {
   config: string | null;
   start_command: string;
   checkin_button: string;
+  run_every_days: number;
 };
 
 type JobRow = {
@@ -108,6 +111,7 @@ type JobRow = {
   checkin_button: string;
   template_id: number | null;
   account_id: number | null;
+  run_every_days: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -125,12 +129,13 @@ function insertTemplate(
     config: unknown;
     startCommand: string;
     checkinButton: string;
+    runEveryDays: number;
   }> = {},
 ): TemplateRow {
   const { lastInsertRowid } = testDb.prepare(`
     INSERT INTO job_templates
-      (name, job_type, bot_username, timezone, reply_timeout_ms, retry_max, config, start_command, checkin_button)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (name, job_type, bot_username, timezone, reply_timeout_ms, retry_max, config, start_command, checkin_button, run_every_days)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     fields.name ?? 'Test Template',
     fields.jobType ?? 'checkin',
@@ -141,6 +146,7 @@ function insertTemplate(
     fields.config != null ? JSON.stringify(fields.config) : null,
     fields.startCommand ?? '/start',
     fields.checkinButton ?? '签到',
+    fields.runEveryDays ?? 1,
   );
   return testDb.prepare('SELECT * FROM job_templates WHERE id = ?').get(lastInsertRowid) as TemplateRow;
 }
@@ -191,18 +197,45 @@ function getTemplate(id: number): TemplateRow | undefined {
 
 // Mirrors the syncLinkedJobs function in templates route
 function syncLinkedJobs(templateId: number, t: TemplateRow) {
-  testDb.prepare(`
-    UPDATE jobs SET
-      job_type = ?, bot_username = ?, timezone = ?,
-      reply_timeout_ms = ?, retry_max = ?,
-      config = ?, start_command = ?, checkin_button = ?
-    WHERE template_id = ?
-  `).run(
-    t.job_type, t.bot_username, t.timezone,
-    t.reply_timeout_ms, t.retry_max,
-    t.config, t.start_command, t.checkin_button,
-    templateId,
-  );
+  if (t.job_type === 'embywatch') {
+    testDb.prepare(`
+      UPDATE jobs SET
+        job_type = ?, bot_username = ?, timezone = ?,
+        reply_timeout_ms = ?, retry_max = ?,
+        start_command = ?, checkin_button = ?,
+        run_every_days = ?
+      WHERE template_id = ?
+    `).run(
+      t.job_type, t.bot_username, t.timezone,
+      t.reply_timeout_ms, t.retry_max,
+      t.start_command, t.checkin_button,
+      t.run_every_days,
+      templateId,
+    );
+
+    const tplCfg = t.config ? (JSON.parse(t.config) as Record<string, unknown>) : {};
+    const linkedJobs = testDb.prepare('SELECT id, config FROM jobs WHERE template_id = ?').all(templateId) as Array<{ id: number; config: string | null }>;
+    for (const job of linkedJobs) {
+      const jobCfg = job.config ? (JSON.parse(job.config) as Record<string, unknown>) : {};
+      const merged = { ...tplCfg, username: jobCfg.username, password: jobCfg.password };
+      testDb.prepare('UPDATE jobs SET config = ? WHERE id = ?').run(JSON.stringify(merged), job.id);
+    }
+  } else {
+    testDb.prepare(`
+      UPDATE jobs SET
+        job_type = ?, bot_username = ?, timezone = ?,
+        reply_timeout_ms = ?, retry_max = ?,
+        config = ?, start_command = ?, checkin_button = ?,
+        run_every_days = ?
+      WHERE template_id = ?
+    `).run(
+      t.job_type, t.bot_username, t.timezone,
+      t.reply_timeout_ms, t.retry_max,
+      t.config, t.start_command, t.checkin_button,
+      t.run_every_days,
+      templateId,
+    );
+  }
 }
 
 // Mirrors the isLinked config-lock logic in the jobs PUT route.
@@ -276,6 +309,7 @@ function makeJobObj(row: JobRow, overrides: Partial<Job> = {}): Job {
     startCommand: row.start_command,
     checkinButton: row.checkin_button,
     templateId: row.template_id,
+    runEveryDays: 1,
     ...overrides,
   };
 }
@@ -381,6 +415,31 @@ describe('Template update -- syncLinkedJobs', () => {
 
     expect(getJob(jobT1.id).bot_username).toBe('bot-updated');
     expect(getJob(jobT2.id).bot_username).toBe('bot-b');
+  });
+
+  it('preserves per-job credentials when an embywatch template config is updated', () => {
+    const t = insertTemplate({ jobType: 'embywatch', config: { playDuration: 300, markWatched: true } });
+    const job1 = insertJob({ jobType: 'embywatch', templateId: t.id, config: { playDuration: 300, markWatched: true, username: 'alice', password: 'secret1' } });
+    const job2 = insertJob({ jobType: 'embywatch', templateId: t.id, config: { playDuration: 300, markWatched: true, username: 'bob', password: 'secret2' } });
+
+    const newConfig = JSON.stringify({ playDuration: 600, markWatched: false });
+    testDb.prepare('UPDATE job_templates SET config = ? WHERE id = ?').run(newConfig, t.id);
+    syncLinkedJobs(t.id, { ...t, config: newConfig });
+
+    const cfg1 = JSON.parse(getJob(job1.id).config!);
+    const cfg2 = JSON.parse(getJob(job2.id).config!);
+
+    // Template settings updated
+    expect(cfg1.playDuration).toBe(600);
+    expect(cfg1.markWatched).toBe(false);
+    expect(cfg2.playDuration).toBe(600);
+    expect(cfg2.markWatched).toBe(false);
+
+    // Per-job credentials preserved
+    expect(cfg1.username).toBe('alice');
+    expect(cfg1.password).toBe('secret1');
+    expect(cfg2.username).toBe('bob');
+    expect(cfg2.password).toBe('secret2');
   });
 });
 
@@ -629,5 +688,45 @@ describe('Runner -- embywatch template config merge', () => {
     expect(calledWith.username).toBe('solo');
     expect(calledWith.password).toBe('solo-pass');
     expect(calledWith.playDuration).toBe(120);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Template update syncs run_every_days to linked jobs
+// ---------------------------------------------------------------------------
+
+describe('Template update -- run_every_days sync', () => {
+  it('propagates run_every_days to all linked jobs', () => {
+    const t = insertTemplate({ runEveryDays: 1 });
+    const job1 = insertJob({ templateId: t.id });
+    const job2 = insertJob({ templateId: t.id });
+    const unlinked = insertJob();
+
+    const updated: TemplateRow = { ...t, run_every_days: 10 };
+    testDb.prepare('UPDATE job_templates SET run_every_days = ? WHERE id = ?').run(10, t.id);
+    syncLinkedJobs(t.id, updated);
+
+    expect(getJob(job1.id).run_every_days).toBe(10);
+    expect(getJob(job2.id).run_every_days).toBe(10);
+    // Unlinked job is untouched
+    expect(getJob(unlinked.id).run_every_days).toBe(1);
+  });
+
+  it('does not change run_every_days on jobs linked to a different template', () => {
+    const t1 = insertTemplate({ runEveryDays: 1 });
+    const t2 = insertTemplate({ runEveryDays: 1 });
+    const jobT1 = insertJob({ templateId: t1.id });
+    const jobT2 = insertJob({ templateId: t2.id });
+
+    syncLinkedJobs(t1.id, { ...t1, run_every_days: 7 });
+
+    expect(getJob(jobT1.id).run_every_days).toBe(7);
+    expect(getJob(jobT2.id).run_every_days).toBe(1);
+  });
+
+  it('stores the updated run_every_days on the template itself', () => {
+    const t = insertTemplate({ runEveryDays: 1 });
+    testDb.prepare('UPDATE job_templates SET run_every_days = ? WHERE id = ?').run(14, t.id);
+    expect(getTemplate(t.id)!.run_every_days).toBe(14);
   });
 });

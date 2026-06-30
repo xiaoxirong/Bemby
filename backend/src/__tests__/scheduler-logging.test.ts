@@ -54,6 +54,7 @@ const job: Job = {
   config: null,
   startCommand: "/start",
   checkinButton: "签到",
+  runEveryDays: 1,
 };
 
 const account: TgAccount = {

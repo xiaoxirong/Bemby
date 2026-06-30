@@ -8,10 +8,13 @@
             <i :class="sharedMulti ? 'fa-solid fa-check' : 'fa-solid fa-share-nodes'"></i>
             {{ t('templates.shareSelectedBtn').replace('{n}', String(selectedIds.length)) }}
           </button>
-          <button class="btn btn-ghost" @click="bulkEnableTpls"><i class="fa-solid fa-circle-check"></i> {{ t('templates.bulkEnable').replace('{n}', String(selectedIds.length)) }}</button>
-          <button class="btn btn-ghost" @click="confirmBulkDisableTpls = true"><i class="fa-solid fa-ban"></i> {{ t('templates.bulkDisable').replace('{n}', String(selectedIds.length)) }}</button>
+          <button class="btn btn-secondary" @click="bulkEnableTpls"><i class="fa-solid fa-circle-check"></i> {{ t('templates.bulkEnable').replace('{n}', String(selectedIds.length)) }}</button>
+          <button class="btn btn-secondary" @click="confirmBulkDisableTpls = true"><i class="fa-solid fa-ban"></i> {{ t('templates.bulkDisable').replace('{n}', String(selectedIds.length)) }}</button>
           <button class="btn btn-danger" @click="confirmBulkDeleteTpls = true"><i class="fa-solid fa-trash"></i> {{ t('templates.bulkDelete').replace('{n}', String(selectedIds.length)) }}</button>
         </template>
+        <button v-if="sortedTemplates.length" class="btn btn-secondary" @click="toggleAll">
+          {{ allSelected ? t('common.deselectAll') : t('common.selectAll') }}
+        </button>
         <button class="btn btn-secondary" @click="openImport"><i class="fa-solid fa-file-import"></i> {{ t('templates.importBtn') }}</button>
         <button class="btn btn-primary" @click="openAdd"><i class="fa-solid fa-plus"></i> {{ t('templates.addBtn') }}</button>
       </div>
@@ -22,9 +25,6 @@
         <table>
           <thead>
             <tr>
-              <th style="width:36px">
-                <input type="checkbox" :checked="allSelected" :indeterminate="selectedIds.length > 0 && !allSelected" @change="toggleAll" />
-              </th>
               <th class="th-sort" :class="sortKey === 'name' ? 'sort-active' : ''" @click="setSort('name')">{{ t('common.name') }} <span class="sort-icon">{{ sortIcon('name') }}</span></th>
               <th class="th-sort" :class="sortKey === 'type' ? 'sort-active' : ''" @click="setSort('type')">{{ t('templates.colType') }} <span class="sort-icon">{{ sortIcon('type') }}</span></th>
               <th class="th-sort" :class="sortKey === 'enabled' ? 'sort-active' : ''" @click="setSort('enabled')">{{ t('templates.colEnabled') }} <span class="sort-icon">{{ sortIcon('enabled') }}</span></th>
@@ -35,24 +35,29 @@
           </thead>
           <tbody>
             <tr v-if="!sortedTemplates.length">
-              <td colspan="7" class="empty">{{ t('templates.noTemplates') }}</td>
+              <td colspan="6" class="empty">{{ t('templates.noTemplates') }}</td>
             </tr>
-            <tr v-for="tpl in sortedTemplates" :key="tpl.id">
-              <td><input type="checkbox" :checked="selectedIds.includes(tpl.id)" @change="toggleSelect(tpl.id)" /></td>
+            <tr
+              v-for="tpl in sortedTemplates"
+              :key="tpl.id"
+              style="cursor:pointer"
+              :class="selectedIds.includes(tpl.id) ? 'row-selected' : ''"
+              @click="toggleSelect(tpl.id)"
+            >
               <td>{{ tpl.name }}</td>
               <td><span :class="jobTypeBadge(tpl.jobType)">{{ t(`logs.jobType.${tpl.jobType}`) }}</span></td>
               <td>
                 <span
                   :class="tpl.enabled ? 'badge badge-green' : 'badge badge-grey'"
                   style="cursor:pointer;user-select:none"
-                  @click="toggleTemplateEnabled(tpl)"
+                  @click.stop="toggleTemplateEnabled(tpl)"
                 >
                   {{ tpl.enabled ? t('common.yes') : t('common.no') }}
                 </span>
               </td>
               <td class="col-hide-mobile">{{ tpl.jobType === 'embywatch' ? tpl.botUsername : '@' + tpl.botUsername }}</td>
               <td class="col-hide-mobile">{{ tpl.linkedJobCount ?? 0 }}</td>
-              <td>
+              <td @click.stop>
                 <div class="actions hide-mobile">
                   <button
                     v-if="(tpl.linkedJobCount ?? 0) > 0"
@@ -168,6 +173,10 @@
               <div style="font-size:11px;color:#aaa;margin-top:4px;padding-left:24px">{{ t('jobs.markWatchedHint') }}</div>
             </div>
             <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">{{ t('jobs.labelRunEveryDays') }}</label>
+                <input v-model.number="form.runEveryDays" class="form-input" type="number" min="1" max="365" style="max-width:120px" />
+              </div>
               <div class="form-group">
                 <label class="form-label">{{ t('jobs.labelMaxRetries') }}</label>
                 <input v-model.number="form.retryMax" class="form-input" type="number" min="1" max="10" />
@@ -290,6 +299,16 @@
                     <label class="form-label">{{ t('jobs.custom.labelMaxWait') }}</label>
                     <input v-model.number="action.maxWaitMs" class="form-input" type="number" min="1000" step="1000" />
                   </div>
+                  <div class="form-group" style="margin-bottom:0">
+                    <label class="form-label">{{ t('jobs.custom.labelSuccessContains') }}</label>
+                    <input v-model.trim="action.successContains" class="form-input" :placeholder="t('jobs.custom.successContainsPlaceholder')" />
+                    <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.custom.successContainsHint') }}</div>
+                  </div>
+                  <div class="form-group" style="margin-bottom:0">
+                    <label class="form-label">{{ t('jobs.custom.labelFailContains') }}</label>
+                    <input v-model.trim="action.failContains" class="form-input" :placeholder="t('jobs.custom.failContainsPlaceholder')" />
+                    <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.custom.failContainsHint') }}</div>
+                  </div>
                 </div>
 
                 <!-- enter_captcha -->
@@ -358,6 +377,16 @@
                 <label class="form-label">{{ t('jobs.labelMaxRetries') }}</label>
                 <input v-model.number="form.retryMax" class="form-input" type="number" min="1" max="10" />
               </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('jobs.labelSuccessContains') }}</label>
+              <input v-model.trim="tplCheckinSuccessContains" class="form-input" :placeholder="t('jobs.successContainsPlaceholder')" />
+              <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.successContainsHint') }}</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">{{ t('jobs.labelFailContains') }}</label>
+              <input v-model.trim="tplCheckinFailContains" class="form-input" :placeholder="t('jobs.failContainsPlaceholder')" />
+              <div style="font-size:11px;color:#aaa;margin-top:3px">{{ t('jobs.failContainsHint') }}</div>
             </div>
           </template>
 
@@ -689,6 +718,7 @@ const form = reactive({
   timezone: 'Australia/Sydney',
   replyTimeoutMs: 40000,
   retryMax: 5,
+  runEveryDays: 1,
 });
 
 const embyCfg = reactive<{ username: string; password: string; playDuration: number | string; userAgent: string; markWatched: boolean }>({
@@ -715,6 +745,8 @@ const cmdCustom = ref('');
 const btnDropdown = ref('');
 const btnCustom = ref('');
 const btnAiHint = ref('');
+const tplCheckinSuccessContains = ref('');
+const tplCheckinFailContains = ref('');
 
 function setCmdState(val: string) {
   if (CMD_PRESETS.has(val)) { cmdDropdown.value = val; cmdCustom.value = ''; }
@@ -753,6 +785,8 @@ function onJobTypeChange() {
   customActions.value = [];
   customJobMaxRetries.value = 1;
   btnAiHint.value = '';
+  tplCheckinSuccessContains.value = '';
+  tplCheckinFailContains.value = '';
   setCmdState(''); setBtnState('');
 }
 
@@ -840,15 +874,31 @@ function buildConfig(): EmbywatchConfig | CustomConfig | null {
         if (a.buttonDropdown === 'custom') button = a.buttonCustom;
         else if (a.buttonDropdown === '{aiBtn}') button = a.buttonAiHint.trim() ? `{aiBtn:${a.buttonAiHint.trim()}}` : '{aiBtn}';
         else button = a.buttonDropdown || '签到';
-        return { type: 'click_button' as const, button, maxRetries: a.maxRetries, maxWaitMs: a.maxWaitMs };
+        return {
+          type: 'click_button' as const,
+          button,
+          maxRetries: a.maxRetries,
+          maxWaitMs: a.maxWaitMs,
+          ...(a.successContains.trim() ? { successContains: a.successContains.trim() } : {}),
+          ...(a.failContains.trim() ? { failContains: a.failContains.trim() } : {}),
+        };
       }),
     };
     if (customJobMaxRetries.value > 1) cfg.maxRetries = customJobMaxRetries.value;
     if (tplProxyId.value) cfg.proxyId = tplProxyId.value;
     return cfg;
   }
-  // checkin: only proxy stored in template config
-  if (tplProxyId.value) return { actions: [], proxyId: tplProxyId.value };
+  if (form.jobType === 'checkin') {
+    const s = tplCheckinSuccessContains.value.trim();
+    const f = tplCheckinFailContains.value.trim();
+    const proxy = tplProxyId.value;
+    if (s || f || proxy) return {
+      ...(s ? { successContains: s } : {}),
+      ...(f ? { failContains: f } : {}),
+      ...(proxy ? { proxyId: proxy } : {}),
+    } as unknown as CustomConfig;
+    return null;
+  }
   return null;
 }
 
@@ -880,6 +930,8 @@ function openAdd() {
   tplProxyId.value = '';
   customActions.value = [];
   customJobMaxRetries.value = 1;
+  tplCheckinSuccessContains.value = '';
+  tplCheckinFailContains.value = '';
   setCmdState(''); setBtnState('');
   formError.value = '';
   showForm.value = true;
@@ -894,6 +946,7 @@ function openEdit(tpl: JobTemplate) {
     timezone: tpl.timezone,
     replyTimeoutMs: tpl.replyTimeoutMs,
     retryMax: tpl.retryMax,
+    runEveryDays: tpl.runEveryDays ?? 1,
   });
   setCmdState(tpl.startCommand === '/start' ? '' : (tpl.startCommand ?? ''));
   setBtnState(tpl.checkinButton === '签到' ? '' : (tpl.checkinButton ?? ''));
@@ -958,7 +1011,7 @@ function openEdit(tpl: JobTemplate) {
             } else {
               buttonDropdown = 'custom'; buttonCustom = a.button;
             }
-            return { ...base, type: 'click_button' as const, button: a.button, buttonDropdown, buttonCustom, buttonAiHint, maxRetries: a.maxRetries, maxWaitMs: a.maxWaitMs };
+            return { ...base, type: 'click_button' as const, button: a.button, buttonDropdown, buttonCustom, buttonAiHint, maxRetries: a.maxRetries, maxWaitMs: a.maxWaitMs, successContains: a.successContains ?? '', failContains: a.failContains ?? '' };
           }
           return base;
         });
@@ -972,10 +1025,14 @@ function openEdit(tpl: JobTemplate) {
     Object.assign(embyCfg, { username: '', password: '', playDuration: '', userAgent: '', markWatched: true });
     Object.assign(embyServer, { protocol: 'https', host: '', port: 443 });
     customActions.value = [];
+    tplCheckinSuccessContains.value = '';
+    tplCheckinFailContains.value = '';
     if (tpl.config) {
       try {
-        const cfg = JSON.parse(tpl.config) as { proxyId?: string };
+        const cfg = JSON.parse(tpl.config) as { proxyId?: string; successContains?: string; failContains?: string };
         tplProxyId.value = cfg.proxyId ?? '';
+        tplCheckinSuccessContains.value = cfg.successContains ?? '';
+        tplCheckinFailContains.value = cfg.failContains ?? '';
       } catch { /* ignore */ }
     }
   }
@@ -1234,6 +1291,14 @@ async function doImport() {
 
 .th-sort.sort-active {
   color: #3730a3;
+}
+
+tbody tr:nth-child(even):not(.row-selected) td {
+  background: #f0f2f5;
+}
+
+.row-selected td {
+  background: #bfdbfe;
 }
 
 .sort-icon {

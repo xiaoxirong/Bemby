@@ -1,13 +1,15 @@
 name: Publish Docker image
 
 on:
+  release:
+    types: [published]   # fires when a GitHub release is published (any version tag)
   push:
     tags:
-      - 'v*.*.*'
+      - 'dev-*'          # dev builds via direct tag push only
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag override (e.g. v0.9.6)'
+        description: 'Image tag override (e.g. v0.9.6 or dev-v0.9.27-1)'
         required: false
 
 jobs:
@@ -16,16 +18,24 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       semver: ${{ steps.resolve.outputs.semver }}
+      push_latest: ${{ steps.resolve.outputs.push_latest }}
     steps:
       - name: Resolve image tag
         id: resolve
         run: |
           if [ -n "${{ github.event.inputs.tag }}" ]; then
-            VERSION="${{ github.event.inputs.tag }}"
+            TAG="${{ github.event.inputs.tag }}"
           else
-            VERSION="${GITHUB_REF_NAME}"
+            TAG="${GITHUB_REF_NAME}"
           fi
-          echo "semver=${VERSION#v}" >> "$GITHUB_OUTPUT"
+          # dev-* tags: use as-is, no latest; release tags: strip v prefix, push latest
+          if [[ "${TAG}" == dev-* ]]; then
+            echo "semver=${TAG}" >> "$GITHUB_OUTPUT"
+            echo "push_latest=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "semver=${TAG#v}" >> "$GITHUB_OUTPUT"
+            echo "push_latest=true" >> "$GITHUB_OUTPUT"
+          fi
 
   # Build each platform natively -- no QEMU
   build:
@@ -85,8 +95,17 @@ jobs:
         run: |
           IMG="${{ secrets.DOCKERHUB_USERNAME }}/bemby"
           VER="${{ needs.meta.outputs.semver }}"
-          docker buildx imagetools create \
-            -t "${IMG}:${VER}" \
-            -t "${IMG}:latest" \
-            "${IMG}:${VER}-amd64" \
-            "${IMG}:${VER}-arm64"
+          # latest is updated by all published releases; dev builds only update the dev tag
+          if [ "${{ needs.meta.outputs.push_latest }}" = "true" ]; then
+            docker buildx imagetools create \
+              -t "${IMG}:${VER}" \
+              -t "${IMG}:latest" \
+              "${IMG}:${VER}-amd64" \
+              "${IMG}:${VER}-arm64"
+          else
+            docker buildx imagetools create \
+              -t "${IMG}:${VER}" \
+              -t "${IMG}:dev" \
+              "${IMG}:${VER}-amd64" \
+              "${IMG}:${VER}-arm64"
+          fi

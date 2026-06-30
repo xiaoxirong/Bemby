@@ -47,6 +47,7 @@ export type Job = {
   startCommand: string;
   checkinButton: string;
   templateId?: number | null;
+  runEveryDays: number;
 };
 
 export type JobTemplate = {
@@ -63,18 +64,25 @@ export type JobTemplate = {
   checkinButton: string;
   createdAt: string;
   linkedJobCount?: number;
+  runEveryDays: number;
 };
 
 export type CustomAction =
   | { type: 'send_command'; content: string; maxRetries?: number }
   | { type: 'wait_reply'; maxWaitMs: number; successContains?: string; failContains?: string; maxRetries?: number }
   | { type: 'delay'; waitMs: number }
-  | { type: 'click_button'; button: string; maxRetries: number; maxWaitMs: number }
+  | { type: 'click_button'; button: string; maxRetries: number; maxWaitMs: number; successContains?: string; failContains?: string }
   | { type: 'enter_captcha'; maxWaitMs: number; captchaLength?: number; maxRetries?: number };
 
 export type CustomConfig = {
   actions: CustomAction[];
   maxRetries?: number;
+  proxyId?: string;
+};
+
+export type CheckinConfig = {
+  successContains?: string;
+  failContains?: string;
   proxyId?: string;
 };
 

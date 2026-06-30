@@ -7,6 +7,7 @@ import {
   checkAccountStatus,
   resendCodeAsSms,
 } from "../auth/tgAuth";
+import { checkSpamStatus } from "../jobs/checkin";
 import type { AuthStatus, TgAppClient } from "../types";
 import type { TgDeviceParams } from "../auth/tgAuth";
 import { parseTgProxy } from "../jobs/runner";
@@ -425,6 +426,35 @@ router.post("/check-enabled-sessions", async (req, res) => {
     .map((r) => (r as PromiseFulfilledResult<any>).value.id);
 
   res.json({ checked: rows.length, expired });
+});
+
+// POST /:id/check-spam -- send /start to @SpamBot and return the parsed spam status
+router.post("/:id/check-spam", async (req, res) => {
+  const account = db
+    .prepare("SELECT * FROM tg_accounts WHERE id = ?")
+    .get(req.params.id) as AccountRow | undefined;
+  if (!account) { res.status(404).json({ error: "Not found" }); return; }
+  if (!account.session_string) {
+    res.status(400).json({ error: "Account not authenticated" });
+    return;
+  }
+
+  try {
+    const proxyUrl = resolveProxyUrl(account.proxy_id);
+    const proxy = parseTgProxy(proxyUrl);
+    const deviceParams = resolveAppClientParams(account.app_client_id);
+    const result = await checkSpamStatus(
+      account.api_id,
+      account.api_hash,
+      account.session_string,
+      proxy,
+      deviceParams,
+    );
+    res.json(result);
+  } catch (err: any) {
+    if (isAuthError(err?.message ?? "")) markSessionExpired(account.id);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /:id/force-reauth -- clear session and reset auth status so the account can be re-authenticated

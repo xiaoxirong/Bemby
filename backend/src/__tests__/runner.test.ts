@@ -61,6 +61,7 @@ function makeJob(jobType: Job["jobType"], retryMax = 1): Job {
         : null,
     startCommand: "/start",
     checkinButton: "签到",
+    runEveryDays: 1,
   };
 }
 

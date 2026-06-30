@@ -138,7 +138,7 @@
                 @touchend.passive="onDialogTouchEnd"
                 @touchmove.passive="onDialogTouchEnd"
               >
-                <div class="tgc-avatar" :class="`tgc-avatar-${d.type}`">
+                <div class="tgc-avatar" :class="`tgc-avatar-${d.type}`" v-avatar-load="d.chatId">
                   <img
                     v-if="avatarSrc(d.chatId)"
                     :src="avatarSrc(d.chatId)"
@@ -211,6 +211,7 @@
               <div
                 class="tgc-avatar tgc-avatar-sm tgc-clickable"
                 :class="`tgc-avatar-${activeChat.type}`"
+                v-avatar-load="activeChat.chatId"
                 @click="openProfile"
               >
                 <img
@@ -318,10 +319,17 @@
                       <div
                         v-if="showSenderAvatar(idx)"
                         class="tgc-sender-av"
-                        :style="{ background: senderColor(msg.fromId) }"
+                        :style="!avatarSrc(msg.fromId) ? { background: senderColor(msg.fromId) } : {}"
                         :title="msg.fromName || ''"
+                        v-avatar-load="msg.fromId"
                       >
-                        {{ avatarLetter(msg.fromName || "?") }}
+                        <img
+                          v-if="avatarSrc(msg.fromId)"
+                          :src="avatarSrc(msg.fromId)"
+                          class="tgc-sender-av-photo"
+                          alt=""
+                        />
+                        <template v-else>{{ avatarLetter(msg.fromName || "?") }}</template>
                       </div>
                       <div v-else class="tgc-sender-av-ph"></div>
                     </template>
@@ -588,6 +596,7 @@
                 <div
                   class="tgc-profile-avatar"
                   :class="`tgc-avatar-${profileDetails.type}`"
+                  v-avatar-load="profileDetails.chatId"
                 >
                   <img
                     v-if="avatarSrc(profileDetails.chatId)"
@@ -979,6 +988,7 @@ import {
   type TgProfile,
   type TgInvitePreview,
 } from "../api/client";
+import { avatarCache, avatarQueue, avatarQueued, avatarFetching, avatarConcurrencyState, persistAvatarCache } from "../composables/avatarCache";
 
 const { inline = false } = defineProps<{ inline?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
@@ -1024,14 +1034,7 @@ const loadingDialogs = ref(false);
 const dialogError = ref("");
 const reconnecting = ref(false);
 
-// Avatar cache keyed by chatId only -- shared across all accounts.
-// '' = fetched but no avatar exists. Undefined = not yet fetched.
-const avatarCache = reactive(new Map<string, string>());
-const avatarQueue: string[] = [];
-const avatarQueued = new Set<string>(); // O(1) membership check for the queue
-const avatarFetching = new Set<string>(); // currently in-flight
 const AVATAR_CONCURRENCY = 3;
-let avatarActive = 0;
 
 const searchQuery = ref("");
 const searchResults = ref<TgDialog[] | null>(null);
@@ -1053,6 +1056,10 @@ const joinRequestSent = ref(false);
 // chatId of the group/channel whose join request is pending -- survives chat navigation
 const pendingJoinChatId = ref<string | null>(null);
 let membershipPollTimer: ReturnType<typeof setInterval> | null = null;
+
+// Debounced mark-read -- coalesces rapid calls (e.g. burst of incoming messages) into one request
+let markReadTimer: ReturnType<typeof setTimeout> | null = null;
+let markReadPending: { chatId: string; maxId: number } | null = null;
 
 // Watcher that keeps re-fetching the last bot message while the bot is still editing it
 let botMsgWatchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1238,6 +1245,8 @@ onBeforeUnmount(() => {
   stopMembershipPoll();
   window.removeEventListener("message", handleMiniAppMessage);
   if (searchTimer.value) clearTimeout(searchTimer.value);
+  _avatarObserver?.disconnect();
+  _avatarObserver = null;
 });
 
 watch(showContacts, async (val) => {
@@ -1312,37 +1321,77 @@ async function ctxPin(pinned: boolean) {
   }
 }
 
-// Returns a data URI from the local cache, or '' if not available yet.
-// Enqueues a fetch the first time a chatId is seen (max 3 concurrent).
-function avatarSrc(chatId: string): string {
-  if (avatarCache.has(chatId)) {
-    const data = avatarCache.get(chatId);
-    return data ? `data:image/jpeg;base64,${data}` : "";
-  }
-  if (!avatarFetching.has(chatId) && !avatarQueued.has(chatId) && selectedAccountId.value) {
-    avatarQueue.push(chatId);
-    avatarQueued.add(chatId);
-    drainAvatarQueue();
-  }
-  return "";
+// Returns a data URI from the local cache, or '' if not yet loaded.
+// Fetches are triggered by the v-avatar-load directive when the element enters the viewport.
+function avatarSrc(chatId: string | null): string {
+  if (!chatId) return "";
+  const data = avatarCache.get(chatId);
+  return data ? `data:image/jpeg;base64,${data}` : "";
 }
 
+// Enqueues a chatId at the front (high priority) so visible avatars load before off-screen ones.
+function enqueueVisibleAvatar(chatId: string): void {
+  if (avatarCache.has(chatId) || avatarFetching.has(chatId) || avatarQueued.has(chatId)) return;
+  if (!selectedAccountId.value) return;
+  avatarQueue.unshift(chatId);
+  avatarQueued.add(chatId);
+  drainAvatarQueue();
+}
+
+let _avatarObserver: IntersectionObserver | null = null;
+
+function getAvatarObserver(): IntersectionObserver {
+  if (!_avatarObserver) {
+    _avatarObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const chatId = (entry.target as HTMLElement).dataset.avatarChatId;
+        if (chatId) {
+          _avatarObserver!.unobserve(entry.target);
+          enqueueVisibleAvatar(chatId);
+        }
+      }
+    }, { threshold: 0 });
+  }
+  return _avatarObserver;
+}
+
+// Vue directive -- place on the avatar container element with the chatId as binding value.
+// Observes the element and triggers a fetch when it scrolls into the viewport.
+const vAvatarLoad = {
+  mounted(el: HTMLElement, binding: { value: string | null }) {
+    if (!binding.value) return;
+    el.dataset.avatarChatId = binding.value;
+    if (avatarCache.has(binding.value)) return; // already cached -- no need to observe
+    getAvatarObserver().observe(el);
+  },
+  updated(el: HTMLElement, binding: { value: string | null; oldValue: string | null }) {
+    if (binding.value === binding.oldValue) return;
+    if (!binding.value) return;
+    el.dataset.avatarChatId = binding.value;
+    if (!avatarCache.has(binding.value)) getAvatarObserver().observe(el);
+  },
+  unmounted(el: HTMLElement) {
+    _avatarObserver?.unobserve(el);
+  },
+};
+
 function drainAvatarQueue(): void {
-  while (avatarActive < AVATAR_CONCURRENCY && avatarQueue.length > 0) {
+  while (avatarConcurrencyState.active < AVATAR_CONCURRENCY && avatarQueue.length > 0) {
     const chatId = avatarQueue.shift()!;
     avatarQueued.delete(chatId);
     // Skip if cached while waiting in queue
     if (avatarCache.has(chatId) || avatarFetching.has(chatId)) continue;
     if (!selectedAccountId.value) { avatarQueue.unshift(chatId); avatarQueued.add(chatId); break; }
-    avatarActive++;
+    avatarConcurrencyState.active++;
     avatarFetching.add(chatId);
     const accountId = selectedAccountId.value;
     tgClientApi.avatarsBatch(accountId, [chatId])
-      .then((result) => { avatarCache.set(chatId, result[chatId] ?? ""); })
+      .then((result) => { avatarCache.set(chatId, result[chatId] ?? ""); persistAvatarCache(); })
       .catch(() => { avatarCache.set(chatId, ""); })
       .finally(() => {
         avatarFetching.delete(chatId);
-        avatarActive--;
+        avatarConcurrencyState.active--;
         drainAvatarQueue();
       });
   }
@@ -1500,10 +1549,9 @@ async function openMiniApp(
       url,
       botChatId,
     );
-    webViewPanel.value = { url: webAppUrl, title };
+    window.open(webAppUrl, "_blank", "noopener");
   } catch {
-    // Fallback: open directly in iframe (without TG auth token)
-    webViewPanel.value = { url, title };
+    window.open(url, "_blank", "noopener");
   }
 }
 
@@ -1853,6 +1901,8 @@ async function clickInlineButton(
         copyToast.value = "Message was updated by the bot -- refreshing...";
         refreshMessages();
       }
+    } else if (raw.includes("BOT_RESPONSE_TIMEOUT")) {
+      // Bot received the click but didn't answer the callback -- action was likely still processed
     } else {
       copyToast.value = friendlyTgError(raw);
     }
@@ -2427,13 +2477,34 @@ async function openChat(dialog: TgDialog, addToHistory = false) {
 function markChatRead(chatId: string) {
   if (!selectedAccountId.value || !messages.value.length) return;
   const maxId = Math.max(...messages.value.map((m) => m.id));
-  firstUnreadId.value = null;
+
   // Clear badge immediately in UI
+  firstUnreadId.value = null;
   const idx = dialogs.value.findIndex((d) => d.chatId === chatId);
   if (idx !== -1)
     dialogs.value[idx] = { ...dialogs.value[idx], unreadCount: 0 };
-  // Fire-and-forget -- non-blocking
-  tgClientApi.markRead(selectedAccountId.value, chatId, maxId).catch(() => {});
+
+  // Coalesce into one request per chat -- same chat just bumps maxId and waits
+  if (markReadPending?.chatId === chatId) {
+    markReadPending.maxId = Math.max(markReadPending.maxId, maxId);
+    return;
+  }
+
+  // Different chat -- flush pending immediately before starting a new timer
+  if (markReadPending && markReadTimer) {
+    clearTimeout(markReadTimer);
+    markReadTimer = null;
+    tgClientApi.markRead(selectedAccountId.value, markReadPending.chatId, markReadPending.maxId).catch(() => {});
+  }
+
+  markReadPending = { chatId, maxId };
+  markReadTimer = setTimeout(() => {
+    markReadTimer = null;
+    if (markReadPending && selectedAccountId.value) {
+      tgClientApi.markRead(selectedAccountId.value, markReadPending.chatId, markReadPending.maxId).catch(() => {});
+      markReadPending = null;
+    }
+  }, 2000);
 }
 
 async function clearChatCache() {
@@ -3429,6 +3500,14 @@ async function addContactSubmit() {
   font-weight: 700;
   color: #fff;
   user-select: none;
+  overflow: hidden;
+}
+
+.tgc-sender-av-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
 }
 
 .tgc-msg-out {

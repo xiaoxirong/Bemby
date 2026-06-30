@@ -75,6 +75,11 @@ export type AccountExportPayload = {
   accounts: AccountExportItem[];
 };
 
+export type TgSpamStatus = {
+  spamStatus: "free" | "limited" | "blocked" | "frozen" | "unknown";
+  rawMessage: string;
+};
+
 export type TgAccountStatus = {
   isActive: boolean;
   isDeleted: boolean;
@@ -116,6 +121,8 @@ export type CustomAction =
       button: string;
       maxRetries: number;
       maxWaitMs: number;
+      successContains?: string;
+      failContains?: string;
     }
   | {
       type: "enter_captcha";
@@ -181,6 +188,7 @@ export type Job = {
   startCommand: string;
   checkinButton: string;
   templateId?: number | null;
+  runEveryDays: number;
 };
 
 export type JobTemplate = {
@@ -197,6 +205,7 @@ export type JobTemplate = {
   checkinButton: string;
   createdAt: string;
   linkedJobCount?: number;
+  runEveryDays: number;
 };
 
 export type EmbywatchLog = {
@@ -342,6 +351,8 @@ export const accountsApi = {
         accounts,
       })
       .then((r) => r.data),
+  checkSpam: (id: number) =>
+    api.post<TgSpamStatus>(`/accounts/${id}/check-spam`).then((r) => r.data),
   checkEnabledSessions: () =>
     api
       .post<{

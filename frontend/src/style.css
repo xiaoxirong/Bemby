@@ -264,6 +264,11 @@ tr:hover td {
 	color: #fff;
 }
 
+.btn-secondary {
+	background: #64748b;
+	color: #fff;
+}
+
 .btn-ghost {
 	background: #f0f2f5;
 	color: #444;

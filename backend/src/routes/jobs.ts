@@ -30,6 +30,7 @@ type JobRow = {
   start_command: string;
   checkin_button: string;
   template_id: number | null;
+  run_every_days: number;
   account_name?: string;
 };
 
@@ -66,6 +67,7 @@ function rowToJob(row: JobRow): Job & { accountName?: string } {
     startCommand: row.start_command || "/start",
     checkinButton: row.checkin_button || "签到",
     templateId: row.template_id ?? null,
+    runEveryDays: row.run_every_days ?? 1,
   };
 }
 
@@ -99,6 +101,7 @@ router.post("/", (req, res) => {
     startCommand,
     checkinButton,
     templateId,
+    runEveryDays,
   } = req.body as Record<string, any>;
 
   const resolvedType = jobType ?? "checkin";
@@ -115,8 +118,8 @@ router.post("/", (req, res) => {
       `
     INSERT INTO jobs
       (name, account_id, job_type, bot_username, schedule_window_start, schedule_window_end,
-       timezone, reply_timeout_ms, retry_max, enabled, config, start_command, checkin_button, template_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       timezone, reply_timeout_ms, retry_max, enabled, config, start_command, checkin_button, template_id, run_every_days)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
     )
     .run(
@@ -134,6 +137,7 @@ router.post("/", (req, res) => {
       (startCommand as string | undefined)?.trim() || "/start",
       (checkinButton as string | undefined)?.trim() || "签到",
       templateId ? Number(templateId) : null,
+      Math.max(1, Number(runEveryDays ?? 1)),
     );
 
   const row = db
@@ -169,6 +173,7 @@ router.put("/:id", (req, res) => {
     startCommand,
     checkinButton,
     templateId,
+    runEveryDays,
   } = req.body as Record<string, any>;
 
   // When linked to a template, template-controlled fields are read-only
@@ -184,7 +189,7 @@ router.put("/:id", (req, res) => {
       name = ?, account_id = ?, job_type = ?, bot_username = ?,
       schedule_window_start = ?, schedule_window_end = ?, timezone = ?,
       reply_timeout_ms = ?, retry_max = ?, enabled = ?, config = ?,
-      start_command = ?, checkin_button = ?, template_id = ?
+      start_command = ?, checkin_button = ?, template_id = ?, run_every_days = ?
     WHERE id = ?
   `,
   ).run(
@@ -207,6 +212,7 @@ router.put("/:id", (req, res) => {
     isLinked ? existing.start_command : (startCommand !== undefined ? ((startCommand as string).trim() || "/start") : existing.start_command),
     isLinked ? existing.checkin_button : (checkinButton !== undefined ? ((checkinButton as string).trim() || "签到") : existing.checkin_button),
     resolvedTemplateId,
+    Math.max(1, Number(runEveryDays ?? existing.run_every_days ?? 1)),
     req.params.id,
   );
 

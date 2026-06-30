@@ -18,6 +18,7 @@ type TemplateRow = {
   start_command: string;
   checkin_button: string;
   created_at: string;
+  run_every_days: number;
 };
 
 function rowToTemplate(row: TemplateRow): JobTemplate {
@@ -34,33 +35,72 @@ function rowToTemplate(row: TemplateRow): JobTemplate {
     startCommand: row.start_command || '/start',
     checkinButton: row.checkin_button || '签到',
     createdAt: row.created_at,
+    runEveryDays: row.run_every_days ?? 1,
   };
 }
 
 // Sync template fields to all linked jobs (enabled is job-specific, not synced)
 function syncLinkedJobs(templateId: number, t: TemplateRow) {
-  db.prepare(`
-    UPDATE jobs SET
-      job_type = ?,
-      bot_username = ?,
-      timezone = ?,
-      reply_timeout_ms = ?,
-      retry_max = ?,
-      config = ?,
-      start_command = ?,
-      checkin_button = ?
-    WHERE template_id = ?
-  `).run(
-    t.job_type,
-    t.bot_username,
-    t.timezone,
-    t.reply_timeout_ms,
-    t.retry_max,
-    t.config,
-    t.start_command,
-    t.checkin_button,
-    templateId,
-  );
+  if (t.job_type === 'embywatch') {
+    // Per-job credentials (username, password) must not be overwritten by the template config.
+    // Update all non-config fields in bulk, then merge config per-job.
+    db.prepare(`
+      UPDATE jobs SET
+        job_type = ?,
+        bot_username = ?,
+        timezone = ?,
+        reply_timeout_ms = ?,
+        retry_max = ?,
+        start_command = ?,
+        checkin_button = ?,
+        run_every_days = ?
+      WHERE template_id = ?
+    `).run(
+      t.job_type,
+      t.bot_username,
+      t.timezone,
+      t.reply_timeout_ms,
+      t.retry_max,
+      t.start_command,
+      t.checkin_button,
+      t.run_every_days ?? 7,
+      templateId,
+    );
+
+    const tplCfg = t.config ? (JSON.parse(t.config) as Record<string, unknown>) : {};
+    const linkedJobs = db.prepare('SELECT id, config FROM jobs WHERE template_id = ?').all(templateId) as Array<{ id: number; config: string | null }>;
+    for (const job of linkedJobs) {
+      const jobCfg = job.config ? (JSON.parse(job.config) as Record<string, unknown>) : {};
+      // Spread template config first, then restore per-job credentials on top
+      const merged = { ...tplCfg, username: jobCfg.username, password: jobCfg.password };
+      db.prepare('UPDATE jobs SET config = ? WHERE id = ?').run(JSON.stringify(merged), job.id);
+    }
+  } else {
+    db.prepare(`
+      UPDATE jobs SET
+        job_type = ?,
+        bot_username = ?,
+        timezone = ?,
+        reply_timeout_ms = ?,
+        retry_max = ?,
+        config = ?,
+        start_command = ?,
+        checkin_button = ?,
+        run_every_days = ?
+      WHERE template_id = ?
+    `).run(
+      t.job_type,
+      t.bot_username,
+      t.timezone,
+      t.reply_timeout_ms,
+      t.retry_max,
+      t.config,
+      t.start_command,
+      t.checkin_button,
+      t.run_every_days ?? 7,
+      templateId,
+    );
+  }
   refreshScheduler();
 }
 
@@ -86,6 +126,7 @@ router.post('/', (req, res) => {
     config,
     startCommand,
     checkinButton,
+    runEveryDays,
   } = req.body as Record<string, any>;
 
   if (!name) {
@@ -95,8 +136,8 @@ router.post('/', (req, res) => {
 
   const result = db.prepare(`
     INSERT INTO job_templates
-      (name, job_type, bot_username, timezone, reply_timeout_ms, retry_max, config, start_command, checkin_button)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (name, job_type, bot_username, timezone, reply_timeout_ms, retry_max, config, start_command, checkin_button, run_every_days)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name,
     jobType ?? 'checkin',
@@ -107,6 +148,7 @@ router.post('/', (req, res) => {
     config != null ? JSON.stringify(config) : null,
     (startCommand as string | undefined)?.trim() || '/start',
     (checkinButton as string | undefined)?.trim() || '签到',
+    Math.max(1, Number(runEveryDays ?? 1)),
   );
 
   const row = db.prepare('SELECT * FROM job_templates WHERE id = ?').get(result.lastInsertRowid) as TemplateRow;
@@ -131,6 +173,7 @@ router.put('/:id', (req, res) => {
     config,
     startCommand,
     checkinButton,
+    runEveryDays,
   } = req.body as Record<string, any>;
 
   const updated: TemplateRow = {
@@ -151,13 +194,14 @@ router.put('/:id', (req, res) => {
     checkin_button: checkinButton !== undefined
       ? ((checkinButton as string).trim() || '签到')
       : existing.checkin_button,
+    run_every_days: Math.max(1, Number(runEveryDays ?? existing.run_every_days ?? 1)),
   };
 
   db.prepare(`
     UPDATE job_templates SET
       name = ?, job_type = ?, bot_username = ?, timezone = ?,
       reply_timeout_ms = ?, retry_max = ?, enabled = ?,
-      config = ?, start_command = ?, checkin_button = ?
+      config = ?, start_command = ?, checkin_button = ?, run_every_days = ?
     WHERE id = ?
   `).run(
     updated.name,
@@ -170,6 +214,7 @@ router.put('/:id', (req, res) => {
     updated.config,
     updated.start_command,
     updated.checkin_button,
+    updated.run_every_days,
     req.params.id,
   );
 

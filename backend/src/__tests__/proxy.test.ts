@@ -71,7 +71,7 @@ function makeCheckinJob(overrides: Partial<Job> = {}): Job {
     id: 1, name: 'Job', accountId: 1, jobType: 'checkin',
     botUsername: 'bot', scheduleWindowStart: 0, scheduleWindowEnd: 0,
     timezone: 'UTC', replyTimeoutMs: 5000, retryMax: 1, enabled: true,
-    createdAt: '', config: null, startCommand: '/start', checkinButton: '签到',
+    createdAt: '', config: null, startCommand: '/start', checkinButton: '签到', runEveryDays: 1,
     ...overrides,
   };
 }
