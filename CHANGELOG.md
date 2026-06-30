@@ -4,6 +4,18 @@ All notable changes to Bemby are documented here.
 
 ---
 
+## v0.9.27-patch-1
+
+### 中文
+
+- **修复 Emby Watch 模板更新清除凭据的问题** -- 更新 Emby Watch 模板时，`syncLinkedJobs` 会将模板配置直接覆盖至关联任务，导致每个任务独立存储的 `username` 和 `password` 被清空；现已修复为按任务合并配置，模板级设置（如 `playDuration`、`markWatched`）正常同步，各任务凭据得以保留
+
+### English
+
+- **Fix Emby Watch template update clearing job credentials** -- updating an Emby Watch template caused `syncLinkedJobs` to overwrite each linked job's config with the raw template config, wiping the per-job `username` and `password`; fixed to merge config per-job so template-level settings (`playDuration`, `markWatched`, etc.) propagate while each job's credentials are preserved
+
+---
+
 ## v0.9.27
 
 ### 中文

@@ -2,7 +2,7 @@
   <img src="docs/logo.png" width="200" alt="Bemby" />
 </p>
 
-# Bemby v0.9.27
+# Bemby v0.9.27-patch-1
 
 [English](#english) | **简体中文**
 

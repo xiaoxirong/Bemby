@@ -1,10 +1,11 @@
 name: Publish Docker image
 
 on:
+  release:
+    types: [published]   # fires when a GitHub release is published (any version tag)
   push:
     tags:
-      - 'v*.*.*'
-      - 'dev-*'
+      - 'dev-*'          # dev builds via direct tag push only
   workflow_dispatch:
     inputs:
       tag:
@@ -94,7 +95,7 @@ jobs:
         run: |
           IMG="${{ secrets.DOCKERHUB_USERNAME }}/bemby"
           VER="${{ needs.meta.outputs.semver }}"
-          # latest is only updated by release tags (v*.*.*), not dev builds
+          # latest is updated by all published releases; dev builds only update the dev tag
           if [ "${{ needs.meta.outputs.push_latest }}" = "true" ]; then
             docker buildx imagetools create \
               -t "${IMG}:${VER}" \

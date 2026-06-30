@@ -41,30 +41,66 @@ function rowToTemplate(row: TemplateRow): JobTemplate {
 
 // Sync template fields to all linked jobs (enabled is job-specific, not synced)
 function syncLinkedJobs(templateId: number, t: TemplateRow) {
-  db.prepare(`
-    UPDATE jobs SET
-      job_type = ?,
-      bot_username = ?,
-      timezone = ?,
-      reply_timeout_ms = ?,
-      retry_max = ?,
-      config = ?,
-      start_command = ?,
-      checkin_button = ?,
-      run_every_days = ?
-    WHERE template_id = ?
-  `).run(
-    t.job_type,
-    t.bot_username,
-    t.timezone,
-    t.reply_timeout_ms,
-    t.retry_max,
-    t.config,
-    t.start_command,
-    t.checkin_button,
-    t.run_every_days ?? 7,
-    templateId,
-  );
+  if (t.job_type === 'embywatch') {
+    // Per-job credentials (username, password) must not be overwritten by the template config.
+    // Update all non-config fields in bulk, then merge config per-job.
+    db.prepare(`
+      UPDATE jobs SET
+        job_type = ?,
+        bot_username = ?,
+        timezone = ?,
+        reply_timeout_ms = ?,
+        retry_max = ?,
+        start_command = ?,
+        checkin_button = ?,
+        run_every_days = ?
+      WHERE template_id = ?
+    `).run(
+      t.job_type,
+      t.bot_username,
+      t.timezone,
+      t.reply_timeout_ms,
+      t.retry_max,
+      t.start_command,
+      t.checkin_button,
+      t.run_every_days ?? 7,
+      templateId,
+    );
+
+    const tplCfg = t.config ? (JSON.parse(t.config) as Record<string, unknown>) : {};
+    const linkedJobs = db.prepare('SELECT id, config FROM jobs WHERE template_id = ?').all(templateId) as Array<{ id: number; config: string | null }>;
+    for (const job of linkedJobs) {
+      const jobCfg = job.config ? (JSON.parse(job.config) as Record<string, unknown>) : {};
+      // Spread template config first, then restore per-job credentials on top
+      const merged = { ...tplCfg, username: jobCfg.username, password: jobCfg.password };
+      db.prepare('UPDATE jobs SET config = ? WHERE id = ?').run(JSON.stringify(merged), job.id);
+    }
+  } else {
+    db.prepare(`
+      UPDATE jobs SET
+        job_type = ?,
+        bot_username = ?,
+        timezone = ?,
+        reply_timeout_ms = ?,
+        retry_max = ?,
+        config = ?,
+        start_command = ?,
+        checkin_button = ?,
+        run_every_days = ?
+      WHERE template_id = ?
+    `).run(
+      t.job_type,
+      t.bot_username,
+      t.timezone,
+      t.reply_timeout_ms,
+      t.retry_max,
+      t.config,
+      t.start_command,
+      t.checkin_button,
+      t.run_every_days ?? 7,
+      templateId,
+    );
+  }
   refreshScheduler();
 }
 

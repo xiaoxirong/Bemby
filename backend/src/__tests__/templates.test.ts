@@ -197,20 +197,45 @@ function getTemplate(id: number): TemplateRow | undefined {
 
 // Mirrors the syncLinkedJobs function in templates route
 function syncLinkedJobs(templateId: number, t: TemplateRow) {
-  testDb.prepare(`
-    UPDATE jobs SET
-      job_type = ?, bot_username = ?, timezone = ?,
-      reply_timeout_ms = ?, retry_max = ?,
-      config = ?, start_command = ?, checkin_button = ?,
-      run_every_days = ?
-    WHERE template_id = ?
-  `).run(
-    t.job_type, t.bot_username, t.timezone,
-    t.reply_timeout_ms, t.retry_max,
-    t.config, t.start_command, t.checkin_button,
-    t.run_every_days,
-    templateId,
-  );
+  if (t.job_type === 'embywatch') {
+    testDb.prepare(`
+      UPDATE jobs SET
+        job_type = ?, bot_username = ?, timezone = ?,
+        reply_timeout_ms = ?, retry_max = ?,
+        start_command = ?, checkin_button = ?,
+        run_every_days = ?
+      WHERE template_id = ?
+    `).run(
+      t.job_type, t.bot_username, t.timezone,
+      t.reply_timeout_ms, t.retry_max,
+      t.start_command, t.checkin_button,
+      t.run_every_days,
+      templateId,
+    );
+
+    const tplCfg = t.config ? (JSON.parse(t.config) as Record<string, unknown>) : {};
+    const linkedJobs = testDb.prepare('SELECT id, config FROM jobs WHERE template_id = ?').all(templateId) as Array<{ id: number; config: string | null }>;
+    for (const job of linkedJobs) {
+      const jobCfg = job.config ? (JSON.parse(job.config) as Record<string, unknown>) : {};
+      const merged = { ...tplCfg, username: jobCfg.username, password: jobCfg.password };
+      testDb.prepare('UPDATE jobs SET config = ? WHERE id = ?').run(JSON.stringify(merged), job.id);
+    }
+  } else {
+    testDb.prepare(`
+      UPDATE jobs SET
+        job_type = ?, bot_username = ?, timezone = ?,
+        reply_timeout_ms = ?, retry_max = ?,
+        config = ?, start_command = ?, checkin_button = ?,
+        run_every_days = ?
+      WHERE template_id = ?
+    `).run(
+      t.job_type, t.bot_username, t.timezone,
+      t.reply_timeout_ms, t.retry_max,
+      t.config, t.start_command, t.checkin_button,
+      t.run_every_days,
+      templateId,
+    );
+  }
 }
 
 // Mirrors the isLinked config-lock logic in the jobs PUT route.
@@ -390,6 +415,31 @@ describe('Template update -- syncLinkedJobs', () => {
 
     expect(getJob(jobT1.id).bot_username).toBe('bot-updated');
     expect(getJob(jobT2.id).bot_username).toBe('bot-b');
+  });
+
+  it('preserves per-job credentials when an embywatch template config is updated', () => {
+    const t = insertTemplate({ jobType: 'embywatch', config: { playDuration: 300, markWatched: true } });
+    const job1 = insertJob({ jobType: 'embywatch', templateId: t.id, config: { playDuration: 300, markWatched: true, username: 'alice', password: 'secret1' } });
+    const job2 = insertJob({ jobType: 'embywatch', templateId: t.id, config: { playDuration: 300, markWatched: true, username: 'bob', password: 'secret2' } });
+
+    const newConfig = JSON.stringify({ playDuration: 600, markWatched: false });
+    testDb.prepare('UPDATE job_templates SET config = ? WHERE id = ?').run(newConfig, t.id);
+    syncLinkedJobs(t.id, { ...t, config: newConfig });
+
+    const cfg1 = JSON.parse(getJob(job1.id).config!);
+    const cfg2 = JSON.parse(getJob(job2.id).config!);
+
+    // Template settings updated
+    expect(cfg1.playDuration).toBe(600);
+    expect(cfg1.markWatched).toBe(false);
+    expect(cfg2.playDuration).toBe(600);
+    expect(cfg2.markWatched).toBe(false);
+
+    // Per-job credentials preserved
+    expect(cfg1.username).toBe('alice');
+    expect(cfg1.password).toBe('secret1');
+    expect(cfg2.username).toBe('bob');
+    expect(cfg2.password).toBe('secret2');
   });
 });
 
